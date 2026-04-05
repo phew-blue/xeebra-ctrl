@@ -1,0 +1,44 @@
+name: Auto Tag Release
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  auto-tag:
+    name: Auto Tag
+    runs-on: home-ops
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          token: ${{ secrets.GH_PAT }}
+          fetch-depth: 0
+
+      - name: Check for release commit and tag
+        run: |
+          COMMIT_MSG=$(git log -1 --pretty=%s)
+          echo "Commit: $COMMIT_MSG"
+
+          VERSION=""
+
+          # Match direct release commit: chore(release): v0.1.0
+          if [[ "$COMMIT_MSG" =~ ^chore\(release\):\ (v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            echo "Direct release commit detected — tagging $VERSION"
+          # Match merge commit from release branch: Merge pull request #N from org/release/v0.1.0
+          elif [[ "$COMMIT_MSG" =~ from\ [^/]+/release/(v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?)$ ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+            echo "Release PR merge detected — tagging $VERSION"
+          fi
+
+          if [[ -n "$VERSION" ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "$VERSION"
+            git push origin "$VERSION"
+            echo "Tagged and pushed $VERSION"
+          else
+            echo "Not a release commit — skipping"
+          fi

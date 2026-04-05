@@ -1,0 +1,96 @@
+name: CI
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────
+  # TypeScript type check — fast feedback on PRs
+  # ──────────────────────────────────────────────────────────────────
+  check-types:
+    name: Type check
+    runs-on: home-ops
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        with:
+          run_install: false
+          package_json_path: frontend/package.json
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: frontend/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+        working-directory: frontend
+
+      - run: pnpm build
+        working-directory: frontend
+
+  # ──────────────────────────────────────────────────────────────────
+  # Full build — frontend + Go binary + (on tags) Inno Setup installer
+  # Runs on Windows so CGO syscall dependencies compile natively
+  # ──────────────────────────────────────────────────────────────────
+  build:
+    name: Build
+    needs: check-types
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
+        with:
+          run_install: false
+          package_json_path: frontend/package.json
+
+      - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
+        with:
+          node-version: 24
+
+      - uses: actions/setup-go@4b73464bb391d4059bd26b0524d20df3927bd417 # v6
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      # Build React frontend (produces frontend/dist — required by go:embed)
+      - name: Build frontend
+        run: pnpm install --frozen-lockfile && pnpm build
+        working-directory: frontend
+
+      # Build Go binary (embeds frontend/dist)
+      - name: Build Go binary
+        run: go build -ldflags="-s -w -H windowsgui" -o xeebra-ctrl.exe .
+
+      # ── Tag-only steps below ────────────────────────────────────────
+
+      - name: Extract version
+        if: startsWith(github.ref, 'refs/tags/v')
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+
+      - name: Install Inno Setup
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: choco install innosetup --no-progress -y
+
+      - name: Build installer
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: iscc "/DMyAppVersion=${{ steps.version.outputs.version }}" installer\windows\xeebra-ctrl.iss
+
+      - name: Attach installer to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2
+        with:
+          files: installer/windows/Output/xeebra-ctrl-setup-*.exe
