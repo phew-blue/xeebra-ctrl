@@ -28,22 +28,22 @@ export interface XeebraSdiCharacteristics {
 }
 
 export interface XeebraCharacteristics {
-  serverUUID: string;
   serverName: string;
-  serialNumber: string;
   version: string;
-  hardwareType: string;
-  sdiAvailable: boolean;
-  srtAvailable: boolean;
-  ndiAvailable: boolean;
-  sdiCharacteristics: XeebraSdiCharacteristics[];
-  timezone: string;
+  serverUUID?: string;
+  serialNumber?: string;
+  hardwareType?: string;
+  sdiAvailable?: boolean;
+  srtAvailable?: boolean;
+  ndiAvailable?: boolean;
+  sdiCharacteristics?: XeebraSdiCharacteristics[];
+  timezone?: string;
 }
 
 export interface XeebraNtpInfo {
   ntpType: 'CLIENT' | 'SERVER' | 'DISABLED';
-  ntpServer: string;
-  ntpStatus: 'SYNCHRONIZED' | 'UNSYNCHRONIZED' | 'ERROR';
+  ntpServer?: string;
+  ntpStatus: string;
 }
 
 export interface XeebraBoardPort {
@@ -57,52 +57,52 @@ export interface XeebraRecorderSdiConfiguration {
 
 export interface XeebraRecorder {
   recorderName: string;
-  slsmType: string;
-  recorderSdiConfiguration: XeebraRecorderSdiConfiguration;
+  slsmType?: string;
+  recorderSdiConfiguration?: XeebraRecorderSdiConfiguration;
 }
 
 export interface XeebraRecordersConfiguration {
-  transport: 'SDI' | 'IP' | 'SRT' | 'NDI';
-  audioChannelsCount: number;
-  recordersList: XeebraRecorder[];
+  transport?: string;
+  audioChannelsCount?: number;
+  recordersList?: XeebraRecorder[];
 }
 
 export interface XeebraPlayout {
   playoutName: string;
-  profile: string;
-  playoutSdiConfiguration: { boardPorts: XeebraBoardPort[] };
+  profile?: string;
+  playoutSdiConfiguration?: { boardPorts: XeebraBoardPort[] };
 }
 
 export interface XeebraPlayoutsConfiguration {
-  transport: 'SDI' | 'IP' | 'SRT' | 'NDI';
-  playoutsList: XeebraPlayout[];
+  transport?: string;
+  playoutsList?: XeebraPlayout[];
 }
 
 export interface XeebraCommonConfiguration {
-  videoFormat: string;
-  sampleRate: string;
-  hdrProfile: string;
+  videoFormat?: string;
+  sampleRate?: string;
+  hdrProfile?: string;
 }
 
 export interface XeebraLicensingInformation {
-  configurationAuthorized: boolean;
-  numberOfInputs: number;
-  numberOfOutputs: number;
+  configurationAuthorized?: boolean;
+  numberOfInputs?: number;
+  numberOfOutputs?: number;
 }
 
 export interface XeebraServerConfiguration {
-  id: string;
   ip: string;
-  name: string;
   status: 'RUNNING' | 'STOPPED' | 'ERROR' | 'OFFLINE' | 'NOT_CONNECTED';
-  characteristics: XeebraCharacteristics;
-  ntpInfo: XeebraNtpInfo;
-  commonConfiguration: XeebraCommonConfiguration;
-  recordersConfiguration: XeebraRecordersConfiguration;
-  playoutsConfiguration: XeebraPlayoutsConfiguration;
-  licensingInformation: XeebraLicensingInformation;
-  connectedClients: string[];
-  playoutController: string;
+  id?: string;
+  name?: string;
+  characteristics?: XeebraCharacteristics;
+  ntpInfo?: XeebraNtpInfo;
+  commonConfiguration?: XeebraCommonConfiguration;
+  recordersConfiguration?: XeebraRecordersConfiguration;
+  playoutsConfiguration?: XeebraPlayoutsConfiguration;
+  licensingInformation?: XeebraLicensingInformation;
+  connectedClients?: string[];
+  playoutController?: string;
 }
 
 export interface XeebraSDIChannelPictureResponse {
