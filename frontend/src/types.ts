@@ -16,7 +16,7 @@ export interface XeebraConfigServer {
   id: string;
   ip: string;
   name: string;
-  status: 'RUNNING' | 'STOPPED' | 'ERROR' | 'OFFLINE';
+  status: 'RUNNING' | 'STOPPED' | 'ERROR' | 'OFFLINE' | 'NOT_CONNECTED';
 }
 
 export interface XeebraSdiCharacteristics {
