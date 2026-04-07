@@ -82,10 +82,9 @@ jobs:
         run: choco install innosetup --no-progress -y
 
       - name: Build installer
-        shell: bash
         run: |
-          SHORT_SHA="${GITHUB_SHA:0:7}"
-          iscc "/DMyAppVersion=dev-${SHORT_SHA}" installer\windows\xeebra-ctrl.iss
+          $shortSha = $env:GITHUB_SHA.Substring(0, 7)
+          iscc "/DMyAppVersion=dev-$shortSha" "installer\windows\xeebra-ctrl.iss"
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
