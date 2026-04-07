@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import type { XeebraConfigServer, XeebraServerConfiguration } from '@/types';
 import ShutdownModal from './ShutdownModal';
+import RestartModal from './RestartModal';
 
 interface Props {
   server: XeebraConfigServer | null;
@@ -29,6 +30,7 @@ export default function ConfigTab({
 }: Props) {
   const [isStartStopLoading, setIsStartStopLoading] = useState(false);
   const [shutdownOpen, setShutdownOpen] = useState(false);
+  const [restartOpen, setRestartOpen] = useState(false);
   const [isModifyMode, setIsModifyMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [formData, setFormData] = useState({
@@ -209,6 +211,14 @@ export default function ConfigTab({
               </a>
             )}
             <button
+              onClick={() => setRestartOpen(true)}
+              disabled={isDemo}
+              title={isDemo ? 'Not available in preview mode' : undefined}
+              className="px-3 py-1.5 border border-evs-warning/60 text-evs-warning rounded-xs text-sm hover:bg-evs-warning hover:text-white transition-colors disabled:opacity-40"
+            >
+              Restart Machine
+            </button>
+            <button
               onClick={() => setShutdownOpen(true)}
               disabled={isDemo}
               title={isDemo ? 'Not available in preview mode' : undefined}
@@ -342,6 +352,18 @@ export default function ConfigTab({
         <ShutdownModal
           isOpen={shutdownOpen}
           onClose={() => setShutdownOpen(false)}
+          serverId={server.id}
+          serverIp={serverConfig.ip}
+          serverName={characteristics?.serverName}
+          apiServerIp={apiServerIp}
+          sshUser={sshUser}
+          sshPassword={sshPassword}
+        />
+      )}
+      {server && !isDemo && (
+        <RestartModal
+          isOpen={restartOpen}
+          onClose={() => setRestartOpen(false)}
           serverId={server.id}
           serverIp={serverConfig.ip}
           serverName={characteristics?.serverName}

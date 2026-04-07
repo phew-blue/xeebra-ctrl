@@ -75,6 +75,7 @@ func (s *server) start() {
 	mux.HandleFunc("POST /api/proxy", s.handleProxyPost)
 	mux.HandleFunc("GET /api/proxy-image", s.handleProxyImage)
 	mux.HandleFunc("POST /api/shutdown", s.handleShutdown)
+	mux.HandleFunc("POST /api/restart", s.handleRestart)
 
 	// Serve embedded React frontend
 	sub, err := fs.Sub(frontendFiles, "frontend/dist")
@@ -217,6 +218,80 @@ func (s *server) handleShutdown(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"success": true,
 		"message": "Server shutdown initiated",
+	})
+}
+
+// POST /api/restart  body: {"serverId":"...","serverIp":"...","apiServerIp":"...","credentials":{...}}
+func (s *server) handleRestart(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ServerID    string `json:"serverId"`
+		ServerIP    string `json:"serverIp"`
+		APIServerIP string `json:"apiServerIp"`
+		Credentials struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		} `json:"credentials"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if req.ServerID == "" || req.ServerIP == "" {
+		jsonError(w, "serverId and serverIp required", http.StatusBadRequest)
+		return
+	}
+	if req.APIServerIP == "" {
+		req.APIServerIP = req.ServerIP
+	}
+
+	// Step 1: check status
+	cfgURL := fmt.Sprintf("http://%s/api/xeebra-config/servers/%s/configuration", req.APIServerIP, req.ServerID)
+	body, err := httpGet(cfgURL, 10*time.Second)
+	if err != nil {
+		jsonError(w, "failed to get server configuration: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	var cfg struct {
+		Status string `json:"status"`
+	}
+	_ = json.Unmarshal(body, &cfg)
+
+	// Step 2: stop if running
+	if cfg.Status == "RUNNING" {
+		stopURL := fmt.Sprintf("http://%s/api/xeebra-config/servers/%s/configuration/_stop", req.APIServerIP, req.ServerID)
+		if _, err := httpPost(stopURL, nil, 10*time.Second); err != nil {
+			jsonError(w, "failed to stop server: "+err.Error(), http.StatusInternalServerError)
+			return
+		}
+		time.Sleep(10 * time.Second)
+	}
+
+	// Step 3: SSH restart
+	sshCfg := &ssh.ClientConfig{
+		User:            req.Credentials.Username,
+		Auth:            []ssh.AuthMethod{ssh.Password(req.Credentials.Password)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(), //nolint:gosec
+		Timeout:         20 * time.Second,
+	}
+	client, err := ssh.Dial("tcp", req.ServerIP+":22", sshCfg)
+	if err != nil {
+		jsonError(w, "SSH connection failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer client.Close()
+
+	sess, err := client.NewSession()
+	if err != nil {
+		jsonError(w, "SSH session failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer sess.Close()
+	_ = sess.Run("sudo reboot")
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"success": true,
+		"message": "Server restart initiated",
 	})
 }
 
