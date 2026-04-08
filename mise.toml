@@ -1,2 +1,4 @@
 [tools]
-go = "latest"
+go = "1.26.2"
+node = "24.14.1"
+pnpm = "10.33.0"

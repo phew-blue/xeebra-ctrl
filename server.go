@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"golang.org/x/crypto/ssh"
@@ -33,6 +34,7 @@ type Group struct {
 }
 
 type server struct {
+	mu     sync.RWMutex
 	config Config
 }
 
@@ -40,6 +42,15 @@ func newServer() *server {
 	return &server{
 		config: Config{Port: 3200},
 	}
+}
+
+func (s *server) saveConfig() error {
+	data, err := json.MarshalIndent(s.config, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal config: %w", err)
+	}
+	path := filepath.Join(exeDir(), "xeebra-ctrl.config.json")
+	return os.WriteFile(path, data, 0644) //nolint:gosec
 }
 
 func (s *server) loadConfig() error {
@@ -76,6 +87,9 @@ func (s *server) start() {
 	mux.HandleFunc("GET /api/proxy-image", s.handleProxyImage)
 	mux.HandleFunc("POST /api/shutdown", s.handleShutdown)
 	mux.HandleFunc("POST /api/restart", s.handleRestart)
+	mux.HandleFunc("POST /api/settings/groups", s.handleCreateGroup)
+	mux.HandleFunc("PUT /api/settings/groups/{index}", s.handleUpdateGroup)
+	mux.HandleFunc("DELETE /api/settings/groups/{index}", s.handleDeleteGroup)
 
 	// Serve embedded React frontend
 	sub, err := fs.Sub(frontendFiles, "frontend/dist")
@@ -98,8 +112,102 @@ func (s *server) handleHealth(w http.ResponseWriter, _ *http.Request) {
 
 // GET /api/config
 func (s *server) handleConfig(w http.ResponseWriter, _ *http.Request) {
+	s.mu.RLock()
+	cfg := s.config
+	s.mu.RUnlock()
 	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(s.config)
+	_ = json.NewEncoder(w).Encode(cfg)
+}
+
+// POST /api/settings/groups  body: {name, apiServerIp, sshUser, sshPassword}
+func (s *server) handleCreateGroup(w http.ResponseWriter, r *http.Request) {
+	var g Group
+	if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if g.Name == "" || g.APIServerIP == "" {
+		jsonError(w, "name and apiServerIp required", http.StatusBadRequest)
+		return
+	}
+	if g.SSHUser == "" {
+		g.SSHUser = "evs"
+	}
+	if g.SSHPassword == "" {
+		g.SSHPassword = "evs123"
+	}
+	s.mu.Lock()
+	s.config.Groups = append(s.config.Groups, g)
+	if err := s.saveConfig(); err != nil {
+		s.mu.Unlock()
+		jsonError(w, "failed to save config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	cfg := s.config
+	s.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(cfg)
+}
+
+// PUT /api/settings/groups/{index}  body: {name, apiServerIp, sshUser, sshPassword}
+func (s *server) handleUpdateGroup(w http.ResponseWriter, r *http.Request) {
+	indexStr := r.PathValue("index")
+	idx := 0
+	if _, err := fmt.Sscanf(indexStr, "%d", &idx); err != nil || idx < 0 {
+		jsonError(w, "invalid index", http.StatusBadRequest)
+		return
+	}
+	var g Group
+	if err := json.NewDecoder(r.Body).Decode(&g); err != nil {
+		jsonError(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	if g.Name == "" || g.APIServerIP == "" {
+		jsonError(w, "name and apiServerIp required", http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	if idx >= len(s.config.Groups) {
+		s.mu.Unlock()
+		jsonError(w, "group index out of range", http.StatusNotFound)
+		return
+	}
+	s.config.Groups[idx] = g
+	if err := s.saveConfig(); err != nil {
+		s.mu.Unlock()
+		jsonError(w, "failed to save config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	cfg := s.config
+	s.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(cfg)
+}
+
+// DELETE /api/settings/groups/{index}
+func (s *server) handleDeleteGroup(w http.ResponseWriter, r *http.Request) {
+	indexStr := r.PathValue("index")
+	idx := 0
+	if _, err := fmt.Sscanf(indexStr, "%d", &idx); err != nil || idx < 0 {
+		jsonError(w, "invalid index", http.StatusBadRequest)
+		return
+	}
+	s.mu.Lock()
+	if idx >= len(s.config.Groups) {
+		s.mu.Unlock()
+		jsonError(w, "group index out of range", http.StatusNotFound)
+		return
+	}
+	s.config.Groups = append(s.config.Groups[:idx], s.config.Groups[idx+1:]...)
+	if err := s.saveConfig(); err != nil {
+		s.mu.Unlock()
+		jsonError(w, "failed to save config: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	cfg := s.config
+	s.mu.Unlock()
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(cfg)
 }
 
 // GET /api/proxy?ip=ADDR&path=/api/xeebra-config/servers
