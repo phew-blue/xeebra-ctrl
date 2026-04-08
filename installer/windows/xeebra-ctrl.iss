@@ -75,23 +75,11 @@ Type: files; Name: "{app}\xeebra-ctrl.config.json"
 
 [Code]
 var
-  XeebraPage: TInputQueryWizardPage;
-  PortPage:   TInputQueryWizardPage;
+  PortPage: TInputQueryWizardPage;
 
 procedure InitializeWizard;
 begin
-  XeebraPage := CreateInputQueryPage(wpWelcome,
-    'Xeebra Server',
-    'Enter the IP address of your Xeebra cluster',
-    'xeebra-ctrl connects to your Xeebra cluster to display video feeds and manage servers.' + #13#10 +
-    'Enter the IP address of the first (or only) server in the cluster.' + #13#10 + #13#10 +
-    'You can add more groups later by editing xeebra-ctrl.config.json in the install directory.');
-  XeebraPage.Add('Group name (e.g. Studio A):', False);
-  XeebraPage.Add('Xeebra server IP address:', False);
-  XeebraPage.Values[0] := 'Main';
-  XeebraPage.Values[1] := '192.168.1.1';
-
-  PortPage := CreateInputQueryPage(XeebraPage.ID,
+  PortPage := CreateInputQueryPage(wpWelcome,
     'Port',
     'Web interface port',
     'xeebra-ctrl runs a local web server. Choose a port that is not in use on this machine.');
@@ -103,17 +91,6 @@ function NextButtonClick(CurPageID: Integer): Boolean;
 begin
   Result := True;
 
-  if CurPageID = XeebraPage.ID then
-  begin
-    if Trim(XeebraPage.Values[1]) = '' then
-    begin
-      MsgBox('Please enter a Xeebra server IP address.', mbError, MB_OK);
-      Result := False;
-    end;
-    if Trim(XeebraPage.Values[0]) = '' then
-      XeebraPage.Values[0] := 'Main';
-  end;
-
   if CurPageID = PortPage.ID then
   begin
     if Trim(PortPage.Values[0]) = '' then
@@ -123,28 +100,17 @@ end;
 
 procedure WriteConfigFile;
 var
-  Dir, GroupName, ServerIP, Port: String;
+  Dir, Port: String;
   Content: String;
 begin
-  Dir       := ExpandConstant('{app}');
-  GroupName := Trim(XeebraPage.Values[0]);
-  ServerIP  := Trim(XeebraPage.Values[1]);
-  Port      := Trim(PortPage.Values[0]);
+  Dir  := ExpandConstant('{app}');
+  Port := Trim(PortPage.Values[0]);
 
-  if GroupName = '' then GroupName := 'Main';
-  if Port = ''      then Port := '3200';
+  if Port = '' then Port := '3200';
 
   Content :=
     '{' + #13#10 +
-    '  "port": ' + Port + ',' + #13#10 +
-    '  "groups": [' + #13#10 +
-    '    {' + #13#10 +
-    '      "name": "' + GroupName + '",' + #13#10 +
-    '      "apiServerIp": "' + ServerIP + '",' + #13#10 +
-    '      "sshUser": "evs",' + #13#10 +
-    '      "sshPassword": "evs123"' + #13#10 +
-    '    }' + #13#10 +
-    '  ]' + #13#10 +
+    '  "port": ' + Port + #13#10 +
     '}' + #13#10;
 
   SaveStringToFile(Dir + '\xeebra-ctrl.config.json', Content, False);
