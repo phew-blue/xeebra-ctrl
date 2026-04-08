@@ -1,5 +1,6 @@
 frontend/node_modules/
 frontend/dist/
+frontend/tsconfig.tsbuildinfo
 xeebra-ctrl.exe
 xeebra-ctrl
 *.exe
