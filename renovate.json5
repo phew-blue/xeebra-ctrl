@@ -9,6 +9,7 @@
   ],
   dependencyDashboard: true,
   dependencyDashboardTitle: "Renovate Dashboard 🤖",
+  baseBranches: ["dev"],
   schedule: ["every weekend"],
 
   packageRules: [
