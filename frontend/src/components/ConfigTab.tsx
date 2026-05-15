@@ -189,46 +189,60 @@ export default function ConfigTab({
     <div className="overflow-y-auto">
       {/* Server + Maintenance row */}
       <div className="grid grid-cols-2 gap-px bg-evs-gray">
-        {/* Server info */}
+        {/* Server info — layout mirrors the source XR-Neo Xeebra
+            Configuration page: IP large on top, then "<host> - <hw>
+            v<ver>", then "Configuration running/stopped" colour-coded,
+            then NTP / connected applications / playout controller. Big
+            square Start/Stop button on the right. */}
         <div className="p-4 bg-evs-gray-darker">
           <h2 className="text-xs font-semibold tracking-widest text-evs-gray-lighter uppercase mb-3">Server</h2>
-          <div className="bg-evs-gray-dark rounded-xs border border-evs-gray p-3 flex gap-4">
-            <div className="flex-1 space-y-1">
-              <div className="font-medium text-evs-contrast">{characteristics?.serverName}</div>
-              <div className="text-sm text-evs-gray-lighter">{serverConfig.ip} · v{characteristics?.version}</div>
+          <div className="bg-evs-gray-dark rounded-xs border border-evs-gray p-4 flex gap-4 items-stretch">
+            <div className="flex-1 space-y-1 min-w-0">
+              <div className="text-base font-mono text-evs-contrast">{serverConfig.ip}</div>
+              <div className="text-sm text-evs-contrast/85">
+                {characteristics?.serverName}
+                {characteristics?.hardwareType ? ` - ${characteristics.hardwareType}` : ''}
+                {characteristics?.version ? ` v${characteristics.version}` : ''}
+              </div>
               <div className={`text-sm font-medium ${isRunning ? 'text-evs-success' : 'text-evs-warning'}`}>
-                {serverConfig.status}
+                {isRunning ? 'Configuration running' : `Configuration ${(serverConfig.status ?? 'stopped').toLowerCase()}`}
               </div>
               {serverConfig.ntpInfo && (
                 <div className="text-xs text-evs-gray-lighter">
-                  NTP:{' '}
-                  {serverConfig.ntpInfo.ntpType === 'SERVER'
-                    ? 'Leader'
+                  NTP {serverConfig.ntpInfo.ntpType === 'SERVER'
+                    ? 'leader'
                     : serverConfig.ntpInfo.ntpType === 'CLIENT'
-                      ? `Follower · ${serverConfig.ntpInfo.ntpStatus}`
-                      : 'Disabled'}
+                      ? `follower · ${serverConfig.ntpInfo.ntpStatus}`
+                      : 'disabled'}
                 </div>
               )}
-              {connectedClients.length > 0 && (
-                <div className="text-xs text-evs-gray-lighter">
-                  Clients: {connectedClients.join(', ')}
-                </div>
+              <div className="text-xs text-evs-gray-lighter truncate">
+                Connected applications: {connectedClients.length > 0 ? connectedClients.join(', ') : '—'}
+              </div>
+              <div className="text-xs text-evs-gray-lighter truncate">
+                Playout controller: {serverConfig.playoutController || '—'}
+              </div>
+            </div>
+            {/* Big square Start/Stop button — visual weight matches the
+                source UI's primary action affordance. */}
+            <button
+              onClick={handleStartStop}
+              disabled={isStartStopLoading || isDemo}
+              title={isDemo ? 'Not available in preview mode' : isRunning ? 'Stop configuration' : 'Start configuration'}
+              className={`shrink-0 self-center w-16 h-16 rounded-xs flex items-center justify-center transition-colors disabled:opacity-40 ${
+                isRunning
+                  ? 'bg-evs-warning/20 text-evs-warning hover:bg-evs-warning/30'
+                  : 'bg-evs-success/20 text-evs-success hover:bg-evs-success/30'
+              }`}
+            >
+              {isStartStopLoading ? (
+                <span className="text-2xl">…</span>
+              ) : isRunning ? (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+              ) : (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
               )}
-            </div>
-            <div className="flex flex-col gap-2 items-end justify-center">
-              <button
-                onClick={handleStartStop}
-                disabled={isStartStopLoading || isDemo}
-                title={isDemo ? 'Not available in preview mode' : undefined}
-                className={`px-4 py-1.5 rounded-xs text-sm font-medium transition-colors disabled:opacity-40 ${
-                  isRunning
-                    ? 'bg-evs-warning/20 text-evs-warning hover:bg-evs-warning/30'
-                    : 'bg-evs-success/20 text-evs-success hover:bg-evs-success/30'
-                }`}
-              >
-                {isStartStopLoading ? '…' : isRunning ? 'Stop' : 'Start'}
-              </button>
-            </div>
+            </button>
           </div>
         </div>
 
@@ -241,72 +255,77 @@ export default function ConfigTab({
             restriction. */}
         <div className="p-4 bg-evs-gray-darker">
           <h2 className="text-xs font-semibold tracking-widest text-evs-gray-lighter uppercase mb-3">Maintenance</h2>
-          <div className="bg-evs-gray-dark rounded-xs border border-evs-gray p-3 flex flex-wrap gap-2">
-            <button
-              onClick={() => handleMaintenance(
-                'clearDisk',
-                'Clear disk',
-                'Clear disk: protected events and recorded data will be erased. Current configuration is kept but no more data will be available. Continue?',
-              )}
-              disabled={isDemo || isModifyMode || maintenanceBusy !== null}
-              title={isModifyMode ? 'Apply configuration first, or cancel your modification' : isDemo ? 'Not available in preview mode' : undefined}
-              className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors disabled:opacity-40"
-            >
-              {maintenanceBusy === 'clearDisk' ? 'Clearing disk…' : 'Clear disk'}
-            </button>
-            <button
-              onClick={() => handleMaintenance(
-                'clearConfiguration',
-                'Clear configuration',
-                'Clear configuration: server configuration will be removed. Recordings stay intact. Continue?',
-              )}
-              disabled={isDemo || isModifyMode || maintenanceBusy !== null}
-              title={isModifyMode ? 'Apply configuration first, or cancel your modification' : isDemo ? 'Not available in preview mode' : undefined}
-              className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors disabled:opacity-40"
-            >
-              {maintenanceBusy === 'clearConfiguration' ? 'Clearing config…' : 'Clear configuration'}
-            </button>
-            <button
-              onClick={() => handleMaintenance(
-                'restartPlayouts',
-                'Restart playouts',
-                'Restart playouts: outputs will be unavailable for a few seconds. Continue?',
-              )}
-              disabled={isDemo || isModifyMode || maintenanceBusy !== null}
-              title={isModifyMode ? 'Apply configuration first, or cancel your modification' : isDemo ? 'Not available in preview mode' : undefined}
-              className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors disabled:opacity-40"
-            >
-              {maintenanceBusy === 'restartPlayouts' ? 'Restarting playouts…' : 'Restart playouts'}
-            </button>
-            {!isDemo && (
-              <a
-                href={`http://${serverConfig.ip}/xrneo-maintenance`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors"
+          <div className="bg-evs-gray-dark rounded-xs border border-evs-gray p-3 space-y-2">
+            {/* Standard maintenance actions — same set as the source UI. */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => handleMaintenance(
+                  'clearDisk',
+                  'Clear disk',
+                  'Clear disk: protected events and recorded data will be erased. Current configuration is kept but no more data will be available. Continue?',
+                )}
+                disabled={isDemo || isModifyMode || maintenanceBusy !== null}
+                title={isModifyMode ? 'Apply configuration first, or cancel your modification' : isDemo ? 'Not available in preview mode' : undefined}
+                className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors disabled:opacity-40"
               >
-                Services Management Tool
-              </a>
-            )}
-            {/* Visual divider between the four standard maintenance
-                actions and the harder host-level ones below. */}
-            <span className="w-px bg-evs-gray mx-1" />
-            <button
-              onClick={() => setRestartOpen(true)}
-              disabled={isDemo}
-              title={isDemo ? 'Not available in preview mode' : undefined}
-              className="px-3 py-1.5 border border-evs-warning/60 text-evs-warning rounded-xs text-sm hover:bg-evs-warning hover:text-white transition-colors disabled:opacity-40"
-            >
-              Restart Machine
-            </button>
-            <button
-              onClick={() => setShutdownOpen(true)}
-              disabled={isDemo}
-              title={isDemo ? 'Not available in preview mode' : undefined}
-              className="px-3 py-1.5 border border-evs-danger/60 text-evs-danger rounded-xs text-sm hover:bg-evs-danger hover:text-white transition-colors disabled:opacity-40"
-            >
-              Shutdown Machine
-            </button>
+                {maintenanceBusy === 'clearDisk' ? 'Clearing disk…' : 'Clear disk'}
+              </button>
+              <button
+                onClick={() => handleMaintenance(
+                  'clearConfiguration',
+                  'Clear configuration',
+                  'Clear configuration: server configuration will be removed. Recordings stay intact. Continue?',
+                )}
+                disabled={isDemo || isModifyMode || maintenanceBusy !== null}
+                title={isModifyMode ? 'Apply configuration first, or cancel your modification' : isDemo ? 'Not available in preview mode' : undefined}
+                className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors disabled:opacity-40"
+              >
+                {maintenanceBusy === 'clearConfiguration' ? 'Clearing config…' : 'Clear configuration'}
+              </button>
+              <button
+                onClick={() => handleMaintenance(
+                  'restartPlayouts',
+                  'Restart playouts',
+                  'Restart playouts: outputs will be unavailable for a few seconds. Continue?',
+                )}
+                disabled={isDemo || isModifyMode || maintenanceBusy !== null}
+                title={isModifyMode ? 'Apply configuration first, or cancel your modification' : isDemo ? 'Not available in preview mode' : undefined}
+                className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors disabled:opacity-40"
+              >
+                {maintenanceBusy === 'restartPlayouts' ? 'Restarting playouts…' : 'Restart playouts'}
+              </button>
+              {!isDemo && (
+                <a
+                  href={`http://${serverConfig.ip}/xrneo-maintenance`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors"
+                >
+                  Services Management Tool
+                </a>
+              )}
+            </div>
+            {/* Host-level actions — separated onto their own row so the
+                colour-coded destructive buttons don't visually crowd the
+                in-app maintenance row above. */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => setRestartOpen(true)}
+                disabled={isDemo}
+                title={isDemo ? 'Not available in preview mode' : undefined}
+                className="px-3 py-1.5 border border-evs-warning/60 text-evs-warning rounded-xs text-sm hover:bg-evs-warning hover:text-white transition-colors disabled:opacity-40"
+              >
+                Restart
+              </button>
+              <button
+                onClick={() => setShutdownOpen(true)}
+                disabled={isDemo}
+                title={isDemo ? 'Not available in preview mode' : undefined}
+                className="px-3 py-1.5 border border-evs-danger/60 text-evs-danger rounded-xs text-sm hover:bg-evs-danger hover:text-white transition-colors disabled:opacity-40"
+              >
+                Shutdown
+              </button>
+            </div>
           </div>
         </div>
       </div>
