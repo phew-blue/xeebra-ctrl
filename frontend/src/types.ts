@@ -109,3 +109,80 @@ export interface XeebraSDIChannelPictureResponse {
   img: string;
   errormsg: string;
 }
+
+// ─── platform-console (:9081) endpoints — Metrics tab ─────────────────────
+
+// /api/platform-console/health/checks — Consul-style service health entries
+// per systemd unit. Status is 'passing' | 'warning' | 'critical'.
+export interface PlatformHealthCheck {
+  Node?: string;
+  CheckID?: string;
+  Name?: string;
+  Status?: string;
+  Output?: string;
+  ServiceID?: string;
+  ServiceName?: string;
+  ServiceTags?: string[];
+}
+
+// /api/platform-console/metrics/sdi — per-board, per-channel signal info.
+export interface PlatformSDIChannel {
+  Index?: number;
+  Type?: string;
+  Running?: boolean;
+  Error?: string;
+  SyncWithRef?: string;
+  Configuration?: PlatformSDIFormat;
+  Signal?: PlatformSDIFormat & { '3GInterface'?: string; LtcValid?: boolean; LtcValue?: string; AudioTracks?: number };
+  Timecodes?: { 'Auto-Generated'?: { Timecode?: string; DropFrame?: boolean }; LTC?: { ErrorStatus?: string } };
+}
+export interface PlatformSDIFormat {
+  HorizontalResolution?: number;
+  VerticalResolution?: number;
+  Progressive?: boolean;
+  Rate?: { Numerator?: number; Denominator?: number };
+  AudioTracks?: number;
+}
+export interface PlatformSDIMetrics {
+  Boards?: Array<{ Channels?: PlatformSDIChannel[] }>;
+}
+
+// /api/platform-console/metrics/sensors — per-chip hardware sensors.
+export interface PlatformSensorElement {
+  name?: string;
+  data?: string;
+  temp?: number | null;
+  high?: number | null;
+  crit?: number | null;
+}
+export interface PlatformSensorChip {
+  name?: string;
+  elements?: PlatformSensorElement[];
+}
+
+// /api/platform-console/metrics/sxstorage — recording storage on raw block
+// device. Top-level keys come back as space-separated strings ("total size",
+// "block size") — that's the upstream API shape.
+export interface PlatformSxStoragePartition {
+  id?: number;
+  totalBytes?: number;
+  totalUsedBytes?: number;
+  totalProtectedBytes?: number;
+  protectedPct?: number;
+  totalBitrate?: number;
+  totalAverageBitrate?: number;
+  availableBytes?: number;
+  tracks?: Array<{ id?: number; durationSec?: number; bitrate?: number; usedBytes?: number; protectedBytes?: number }>;
+}
+export interface PlatformSxStorage {
+  version?: string;
+  'protocolx API version'?: string;
+  'block size'?: string;
+  'total size'?: string;
+  'remaining size'?: string;
+  'partition count'?: string | number;
+  'dynamic track count'?: string | number;
+  'static track count'?: string | number;
+  protectedCount?: number;
+  partitionsInfos?: PlatformSxStoragePartition[];
+}
