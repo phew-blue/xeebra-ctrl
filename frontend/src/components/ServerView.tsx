@@ -43,6 +43,10 @@ interface Props {
   rightActions?: React.ReactNode;
   /** Hide the dropdown when there's only one valid choice / parent already chose. */
   hideServerPicker?: boolean;
+  /** When the parent is in split-view: 'h' = side by side, 'v' = stacked.
+   * Forwarded to MonitoringTab so the thumb grid adapts to the available
+   * width / height of this pane. */
+  splitMode?: 'h' | 'v' | null;
 }
 
 export default function ServerView({
@@ -55,6 +59,7 @@ export default function ServerView({
   onTabChange,
   rightActions,
   hideServerPicker,
+  splitMode,
 }: Props) {
   const [activeTab, setActiveTab] = useState<ServerTab>(initialTab);
   const [serverConfig, setServerConfig] = useState<XeebraServerConfiguration | null>(null);
@@ -164,7 +169,7 @@ export default function ServerView({
             Select a server above
           </div>
         ) : activeTab === 'monitoring' ? (
-          <MonitoringTab serverConfig={serverConfig} loading={loading} error={error} isDemo={isDemo} />
+          <MonitoringTab serverConfig={serverConfig} loading={loading} error={error} isDemo={isDemo} splitMode={splitMode ?? null} />
         ) : activeTab === 'metrics' ? (
           <MetricsTab ip={serverConfig?.ip ?? selectedServer?.ip ?? ''} isDemo={isDemo} />
         ) : (

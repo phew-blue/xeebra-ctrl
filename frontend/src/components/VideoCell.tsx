@@ -84,9 +84,15 @@ export default function VideoCell({ ip, sdiBoard, sdiPort, className = '' }: Pro
     return stopInterval;
   }, [isVisible, startInterval, stopInterval]);
 
+  // All three states fill their parent — the cell wrapper in MonitoringTab
+  // (or any other consumer) decides the size via aspect-video. Image uses
+  // h-full so it tracks the wrapper, not its natural pixel size.
   if (hasError) {
     return (
-      <div ref={containerRef} className="text-xs p-2 bg-evs-danger/20 text-evs-danger rounded">
+      <div
+        ref={containerRef}
+        className={`w-full h-full flex items-center justify-center text-xs p-2 bg-evs-danger/20 text-evs-danger ${className}`}
+      >
         SDI {sdiBoard}:{sdiPort} unavailable
       </div>
     );
@@ -94,18 +100,21 @@ export default function VideoCell({ ip, sdiBoard, sdiPort, className = '' }: Pro
 
   if (!imgSrc) {
     return (
-      <div ref={containerRef} className="text-xs p-2 text-evs-gray-lighter">
+      <div
+        ref={containerRef}
+        className={`w-full h-full flex items-center justify-center text-xs p-2 text-evs-gray-lighter ${className}`}
+      >
         {isVisible ? 'Loading...' : 'Inactive'}
       </div>
     );
   }
 
   return (
-    <div ref={containerRef} className="relative">
+    <div ref={containerRef} className={`relative w-full h-full ${className}`}>
       <img
         src={imgSrc}
         alt={`SDI ${sdiBoard}:${sdiPort}`}
-        className={`w-full h-auto object-contain ${className}`}
+        className="w-full h-full object-contain"
       />
     </div>
   );

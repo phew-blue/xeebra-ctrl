@@ -317,6 +317,7 @@ export default function App() {
                 onTabChange={t => setGroupState(prev => ({ ...prev, leftTab: t }))}
                 rightActions={splitActive ? null : splitButtons}
                 hideServerPicker={!splitActive}
+                splitMode={splitActive ? groupState.splitDir : null}
               />
               {splitActive && (
                 <ServerView
@@ -328,6 +329,7 @@ export default function App() {
                   initialTab={groupState.rightTab}
                   onTabChange={t => setGroupState(prev => ({ ...prev, rightTab: t }))}
                   rightActions={splitButtons}
+                  splitMode={groupState.splitDir}
                 />
               )}
             </div>
