@@ -58,15 +58,17 @@ export default function Sidebar({ serverList, serverListError, selectedServerId,
                   <span className="text-[11px] font-mono text-evs-contrast/85 truncate">{server.ip}</span>
                   <span className="text-sm text-evs-contrast truncate">{server.name}</span>
                 </div>
-                {/* Health-check alert badges. Solid backgrounds for
-                    readability over both selected and hover row states —
-                    the prior 20%-tint version washed out against either. */}
+                {/* Health-check alert badges. Tinted backgrounds (not
+                    solid) so they sit alongside the IP/hostname without
+                    fighting them visually — the two-line layout already
+                    gives the badges their own dedicated column so the
+                    contrast issue the solid version was solving is gone. */}
                 {(critical > 0 || warning > 0) && (
                   <span className="flex items-center gap-1 shrink-0">
                     {critical > 0 && (
                       <span
                         title={`${critical} critical health check${critical === 1 ? '' : 's'}`}
-                        className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-xs bg-evs-danger text-white"
+                        className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-xs bg-evs-danger/20 text-evs-danger"
                       >
                         {critical}
                       </span>
@@ -74,7 +76,7 @@ export default function Sidebar({ serverList, serverListError, selectedServerId,
                     {warning > 0 && (
                       <span
                         title={`${warning} warning health check${warning === 1 ? '' : 's'}`}
-                        className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-xs bg-evs-warning text-evs-gray-darker"
+                        className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-xs bg-evs-warning/20 text-evs-warning"
                       >
                         {warning}
                       </span>
