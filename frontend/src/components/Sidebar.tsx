@@ -41,7 +41,7 @@ export default function Sidebar({ serverList, serverListError, selectedServerId,
               <button
                 key={server.id}
                 onClick={() => onSelectServer(server.id)}
-                className={`w-full text-left flex items-center gap-2.5 px-4 py-2 text-sm transition-colors ${
+                className={`w-full text-left flex items-center gap-2.5 px-3 py-2 transition-colors ${
                   selectedServerId === server.id
                     ? 'bg-evs-gray text-evs-contrast'
                     : 'text-evs-gray-lighter hover:text-evs-contrast hover:bg-evs-gray/40'
@@ -50,15 +50,21 @@ export default function Sidebar({ serverList, serverListError, selectedServerId,
                 <span
                   className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[server.status] ?? 'bg-evs-gray-lighter'}`}
                 />
-                <span className="truncate">{server.name}</span>
-                {/* Health-check alert badges. Critical wins in colour;
-                    show both numbers when there's a mix. */}
+                {/* Two-line stack: IP on top (mono, muted), hostname below.
+                    Long names truncate before pushing the badge column. */}
+                <div className="flex-1 min-w-0 flex flex-col leading-tight">
+                  <span className="text-[11px] font-mono text-evs-gray-lighter truncate">{server.ip}</span>
+                  <span className="text-sm truncate">{server.name}</span>
+                </div>
+                {/* Health-check alert badges. Solid backgrounds for
+                    readability over both selected and hover row states —
+                    the prior 20%-tint version washed out against either. */}
                 {(critical > 0 || warning > 0) && (
-                  <span className="flex items-center gap-1 ml-1 shrink-0">
+                  <span className="flex items-center gap-1 shrink-0">
                     {critical > 0 && (
                       <span
                         title={`${critical} critical health check${critical === 1 ? '' : 's'}`}
-                        className="text-[10px] font-mono font-bold px-1.5 py-px rounded-xs bg-evs-danger/20 text-evs-danger"
+                        className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-xs bg-evs-danger text-white"
                       >
                         {critical}
                       </span>
@@ -66,14 +72,13 @@ export default function Sidebar({ serverList, serverListError, selectedServerId,
                     {warning > 0 && (
                       <span
                         title={`${warning} warning health check${warning === 1 ? '' : 's'}`}
-                        className="text-[10px] font-mono font-bold px-1.5 py-px rounded-xs bg-evs-warning/20 text-evs-warning"
+                        className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded-xs bg-evs-warning text-evs-gray-darker"
                       >
                         {warning}
                       </span>
                     )}
                   </span>
                 )}
-                <span className="ml-auto text-xs text-evs-gray-lighter truncate">{server.ip}</span>
               </button>
             );
           })
