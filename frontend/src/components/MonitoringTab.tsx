@@ -6,8 +6,8 @@ interface Props {
   loading: boolean;
   error: string | null;
   isDemo: boolean;
-  /** When the parent is in split-view: 'h' = side by side, 'v' = stacked.
-   * Drives column count per row so thumbs stay legible in either layout. */
+  /** Parent split-view mode: 'h' = side by side (cap at 2 cols), 'v' or
+   * null = full-width pane (4 cols, centered). */
   splitMode?: 'h' | 'v' | null;
 }
 
@@ -48,46 +48,62 @@ export default function MonitoringTab({ serverConfig, loading, error, isDemo, sp
     return <Centered className="text-evs-gray-lighter">No recorders configured</Centered>;
   }
 
-  // Grid layout per pane:
-  //   - default (no split): up to 4 cols on wide displays
-  //   - horizontal split (side by side): each pane is half-width, so cap at
-  //     2 cols regardless of viewport — gives 2 large thumbs per row, the
-  //     UX the operator asked for.
-  //   - vertical split (stacked): pane height halves, so use more cols at
-  //     wider breakpoints to make each cell narrower (and thus shorter,
-  //     since they're aspect-locked) so more rows still fit on screen.
-  const gridCols =
-    splitMode === 'h'
-      ? 'grid-cols-1 sm:grid-cols-2'
-      : splitMode === 'v'
-        ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6'
-        : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4';
+  // Grid layout:
+  //   - horizontal split (side by side): 2 cols per pane — operator wants
+  //     two readable thumbs per row, not four crammed ones.
+  //   - everything else (single pane, vertical split): 4 cols, centered.
+  // Rows share the available pane height via `grid-auto-rows: 1fr`, and
+  // each cell's video area uses object-contain to preserve aspect inside
+  // whatever (width × height) the grid hands it. That way 8 thumbs in 2
+  // cols become 4 short rows on a horizontal split instead of overflowing
+  // off-screen with aspect-video.
+  const gridCols = splitMode === 'h' ? 'grid-cols-2' : 'grid-cols-2 sm:grid-cols-4';
+  const wrapperWidth = splitMode === 'h' ? 'max-w-3xl' : 'max-w-6xl';
 
   return (
-    <div className={`p-4 grid ${gridCols} gap-4`}>
+    <div
+      className={`p-3 grid ${gridCols} gap-3 mx-auto w-full h-full overflow-hidden ${wrapperWidth}`}
+      style={{ gridAutoRows: 'minmax(0, 1fr)' }}
+    >
       {recorders.map((recorder, i) => {
         const bp = recorder.recorderSdiConfiguration?.boardPorts?.[0];
         const board = bp?.board ?? 0;
         const port = bp?.port ?? 0;
+        // Lexi-style tile: video fills the entire cell; board/port + recorder
+        // name are overlaid in tiny white text with a black shadow so they
+        // stay legible over either dark or bright video. Faint Phew-Blue
+        // watermark sits behind so empty/loading cells don't look broken.
         return (
-          <div key={i} className="bg-evs-gray-dark border border-evs-gray rounded-xs p-3 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-evs-contrast">{recorder.recorderName}</span>
-              <span className="text-xs text-evs-gray-lighter">B{board}:P{port}</span>
+          <div
+            key={i}
+            className="relative min-h-0 overflow-hidden rounded-xs border border-evs-gray bg-evs-gray-dark"
+          >
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+              <img src="/phew-blue-logo.svg" alt="" className="w-3/5 opacity-[0.07]" />
             </div>
-            {/* aspect-video locks the thumb height to width × 9/16 — keeps
-                the grid predictable. Without it, image height is its
-                natural pixel size and rows can grow unevenly. */}
-            <div className="aspect-video bg-evs-gray rounded-xs overflow-hidden flex items-center justify-center">
-              {isDemo ? (
-                <DemoVideoPlaceholder name={recorder.recorderName} />
-              ) : (
-                <VideoCell
-                  ip={serverConfig!.ip}
-                  sdiBoard={board}
-                  sdiPort={port}
-                />
-              )}
+            {isDemo ? (
+              <DemoVideoPlaceholder name={recorder.recorderName} />
+            ) : (
+              <VideoCell
+                ip={serverConfig!.ip}
+                sdiBoard={board}
+                sdiPort={port}
+                className="absolute inset-0"
+              />
+            )}
+            <span
+              className="absolute top-0.5 left-0.5 text-[9px] font-bold font-mono text-white leading-none"
+              style={{ textShadow: '0 0 2px #000, 1px 1px 0 #000' }}
+            >
+              B{board}/P{port}
+            </span>
+            <div className="absolute bottom-0.5 left-0 right-0">
+              <span
+                className="block text-center text-[9px] font-bold text-white leading-none truncate px-1"
+                style={{ textShadow: '0 0 2px #000, 1px 1px 0 #000' }}
+              >
+                {recorder.recorderName || ' '}
+              </span>
             </div>
           </div>
         );
