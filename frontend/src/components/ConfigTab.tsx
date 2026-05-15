@@ -223,24 +223,31 @@ export default function ConfigTab({
                 Playout controller: {serverConfig.playoutController || '—'}
               </div>
             </div>
-            {/* Big square Start/Stop button — visual weight matches the
-                source UI's primary action affordance. */}
+            {/* Big square Start/Stop button — primary-blue, hollow icon
+                + "Start"/"Stop" text label underneath. Same colour in
+                both states; the icon + label communicate the action. */}
             <button
               onClick={handleStartStop}
               disabled={isStartStopLoading || isDemo}
               title={isDemo ? 'Not available in preview mode' : isRunning ? 'Stop configuration' : 'Start configuration'}
-              className={`shrink-0 self-center w-16 h-16 rounded-xs flex items-center justify-center transition-colors disabled:opacity-40 ${
-                isRunning
-                  ? 'bg-evs-warning/20 text-evs-warning hover:bg-evs-warning/30'
-                  : 'bg-evs-success/20 text-evs-success hover:bg-evs-success/30'
-              }`}
+              className="shrink-0 self-center w-20 h-20 rounded-xs flex flex-col items-center justify-center gap-1 transition-colors disabled:opacity-40 bg-evs-primary/15 text-evs-primary hover:bg-evs-primary/25"
             >
               {isStartStopLoading ? (
-                <span className="text-2xl">…</span>
+                <span className="text-2xl leading-none">…</span>
               ) : isRunning ? (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1"/></svg>
+                <>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="6" y="6" width="12" height="12" rx="1" />
+                  </svg>
+                  <span className="text-[11px] font-medium leading-none">Stop</span>
+                </>
               ) : (
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+                <>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                  <span className="text-[11px] font-medium leading-none">Start</span>
+                </>
               )}
             </button>
           </div>
@@ -392,6 +399,7 @@ export default function ConfigTab({
                       <th className="text-left px-3 py-2 font-medium">SDI Recorder name *</th>
                       <th className="text-left px-3 py-2 font-medium w-24">SLSM *</th>
                       <th className="text-left px-3 py-2 font-medium w-32">SDI port *</th>
+                      <th className="w-10" />
                     </tr>
                   </thead>
                   <tbody>
@@ -403,6 +411,23 @@ export default function ConfigTab({
                           <td className="px-3 py-2 text-evs-contrast">{r.recorderName}</td>
                           <td className="px-3 py-2 text-evs-gray-lighter">{r.slsmType ?? 'NO'}</td>
                           <td className="px-3 py-2 text-evs-gray-lighter">{portLabel}</td>
+                          {/* Per-row edit pencil — visual parity with the
+                              source UI's recorder list. Disabled until
+                              Modify is active; row-edit modal will hook
+                              in here later. */}
+                          <td className="px-2 py-2">
+                            <button
+                              type="button"
+                              disabled={fieldsDisabled}
+                              title={fieldsDisabled ? 'Click Modify to edit recorder rows' : `Edit ${r.recorderName}`}
+                              className="w-7 h-7 flex items-center justify-center rounded-xs border border-evs-gray text-evs-gray-lighter hover:text-evs-contrast hover:border-evs-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                                <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                              </svg>
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -444,8 +469,9 @@ export default function ConfigTab({
             </p>
           )}
 
-          {/* Actions */}
-          <div className="flex justify-end gap-3 pt-1 border-t border-evs-gray">
+          {/* Actions — bottom-left aligned to match the source UI's
+              Modify / Cancel / Save row position. */}
+          <div className="flex justify-start gap-3 pt-1 border-t border-evs-gray">
             {!isModifyMode ? (
               <button
                 onClick={() => setIsModifyMode(true)}
