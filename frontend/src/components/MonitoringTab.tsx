@@ -6,9 +6,12 @@ interface Props {
   loading: boolean;
   error: string | null;
   isDemo: boolean;
+  /** When the parent is in split-view: 'h' = side by side, 'v' = stacked.
+   * Drives column count per row so thumbs stay legible in either layout. */
+  splitMode?: 'h' | 'v' | null;
 }
 
-export default function MonitoringTab({ serverConfig, loading, error, isDemo }: Props) {
+export default function MonitoringTab({ serverConfig, loading, error, isDemo, splitMode }: Props) {
   if (loading && !serverConfig) {
     return <Centered>Loading…</Centered>;
   }
@@ -45,8 +48,23 @@ export default function MonitoringTab({ serverConfig, loading, error, isDemo }: 
     return <Centered className="text-evs-gray-lighter">No recorders configured</Centered>;
   }
 
+  // Grid layout per pane:
+  //   - default (no split): up to 4 cols on wide displays
+  //   - horizontal split (side by side): each pane is half-width, so cap at
+  //     2 cols regardless of viewport — gives 2 large thumbs per row, the
+  //     UX the operator asked for.
+  //   - vertical split (stacked): pane height halves, so use more cols at
+  //     wider breakpoints to make each cell narrower (and thus shorter,
+  //     since they're aspect-locked) so more rows still fit on screen.
+  const gridCols =
+    splitMode === 'h'
+      ? 'grid-cols-1 sm:grid-cols-2'
+      : splitMode === 'v'
+        ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6'
+        : 'grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4';
+
   return (
-    <div className="p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+    <div className={`p-4 grid ${gridCols} gap-4`}>
       {recorders.map((recorder, i) => {
         const bp = recorder.recorderSdiConfiguration?.boardPorts?.[0];
         const board = bp?.board ?? 0;
@@ -57,16 +75,20 @@ export default function MonitoringTab({ serverConfig, loading, error, isDemo }: 
               <span className="text-sm font-medium text-evs-contrast">{recorder.recorderName}</span>
               <span className="text-xs text-evs-gray-lighter">B{board}:P{port}</span>
             </div>
-            {isDemo ? (
-              <DemoVideoPlaceholder name={recorder.recorderName} />
-            ) : (
-              <VideoCell
-                ip={serverConfig!.ip}
-                sdiBoard={board}
-                sdiPort={port}
-                className="rounded-xs"
-              />
-            )}
+            {/* aspect-video locks the thumb height to width × 9/16 — keeps
+                the grid predictable. Without it, image height is its
+                natural pixel size and rows can grow unevenly. */}
+            <div className="aspect-video bg-evs-gray rounded-xs overflow-hidden flex items-center justify-center">
+              {isDemo ? (
+                <DemoVideoPlaceholder name={recorder.recorderName} />
+              ) : (
+                <VideoCell
+                  ip={serverConfig!.ip}
+                  sdiBoard={board}
+                  sdiPort={port}
+                />
+              )}
+            </div>
           </div>
         );
       })}
@@ -75,8 +97,9 @@ export default function MonitoringTab({ serverConfig, loading, error, isDemo }: 
 }
 
 function DemoVideoPlaceholder({ name }: { name: string }) {
+  // Outer aspect-video lives in MonitoringTab; this just fills it.
   return (
-    <div className="aspect-video bg-evs-gray rounded-xs flex flex-col items-center justify-center gap-1 text-evs-gray-lighter">
+    <div className="w-full h-full flex flex-col items-center justify-center gap-1 text-evs-gray-lighter">
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
         <rect x="2" y="7" width="20" height="15" rx="2" ry="2" />
         <polyline points="17 2 12 7 7 2" />
