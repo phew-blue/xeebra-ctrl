@@ -42,19 +42,21 @@ export default function Sidebar({ serverList, serverListError, selectedServerId,
                 key={server.id}
                 onClick={() => onSelectServer(server.id)}
                 className={`w-full text-left flex items-center gap-2.5 px-3 py-2 transition-colors ${
-                  selectedServerId === server.id
-                    ? 'bg-evs-gray text-evs-contrast'
-                    : 'text-evs-gray-lighter hover:text-evs-contrast hover:bg-evs-gray/40'
+                  selectedServerId === server.id ? 'bg-evs-gray' : 'hover:bg-evs-gray/40'
                 }`}
               >
                 <span
                   className={`w-1.5 h-1.5 rounded-full shrink-0 ${STATUS_DOT[server.status] ?? 'bg-evs-gray-lighter'}`}
                 />
-                {/* Two-line stack: IP on top (mono, muted), hostname below.
-                    Long names truncate before pushing the badge column. */}
+                {/* Two-line stack: IP on top (mono), hostname below. Both
+                    use fixed text colours so selected vs non-selected only
+                    differs in background — IP/SN keep their look in both
+                    states. IP at /85 contrast so it's readable info, not
+                    decorative metadata, but stays subordinate to the
+                    hostname label. */}
                 <div className="flex-1 min-w-0 flex flex-col leading-tight">
-                  <span className="text-[11px] font-mono text-evs-gray-lighter truncate">{server.ip}</span>
-                  <span className="text-sm truncate">{server.name}</span>
+                  <span className="text-[11px] font-mono text-evs-contrast/85 truncate">{server.ip}</span>
+                  <span className="text-sm text-evs-contrast truncate">{server.name}</span>
                 </div>
                 {/* Health-check alert badges. Solid backgrounds for
                     readability over both selected and hover row states —
