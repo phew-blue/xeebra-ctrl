@@ -33,6 +33,10 @@ export default function ConfigTab({
   const [restartOpen, setRestartOpen] = useState(false);
   const [isModifyMode, setIsModifyMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  // Each maintenance action is independently spinnered so a slow one
+  // doesn't lock the others.
+  type MaintenanceAction = 'clearDisk' | 'clearConfiguration' | 'restartPlayouts';
+  const [maintenanceBusy, setMaintenanceBusy] = useState<MaintenanceAction | null>(null);
   const [formData, setFormData] = useState({
     videoFormat: '',
     sampleRate: '',
@@ -54,6 +58,38 @@ export default function ConfigTab({
       });
     }
   }, [serverConfig]);
+
+  // Generic POST to /api/xeebra-config/servers/{id}/configuration/_<action>.
+  // Mirrors what the source XR-Neo Xeebra Configuration page does for its
+  // Maintenance row buttons. Each action is destructive in its own way
+  // (clear disk wipes recorded media, clear configuration drops the
+  // server config, restart playouts interrupts output) so each prompts.
+  const handleMaintenance = async (
+    action: MaintenanceAction,
+    label: string,
+    confirmMsg: string,
+  ) => {
+    if (!server?.id || isDemo) return;
+    if (!window.confirm(confirmMsg)) return;
+    setMaintenanceBusy(action);
+    try {
+      await fetch('/api/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ip: apiServerIp,
+          path: `/api/xeebra-config/servers/${server.id}/configuration/_${action}`,
+        }),
+      });
+      onRefresh();
+    } catch (e) {
+      // Surface to the operator — the source UI shows a banner; we use
+      // a simple alert until we add a toast layer here.
+      alert(`${label} failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setMaintenanceBusy(null);
+    }
+  };
 
   const handleStartStop = async () => {
     if (!server?.id) return;
@@ -196,20 +232,65 @@ export default function ConfigTab({
           </div>
         </div>
 
-        {/* Maintenance */}
+        {/* Maintenance — mirrors the source XR-Neo Xeebra Configuration page:
+            Clear disk, Clear configuration, Restart playouts, Services
+            Management Tool. Restart/Shutdown Machine are kept here too
+            because xeebra-ctrl is the only place an operator can do
+            those without SSHing in. Maintenance actions can't be run
+            while a Modify session is open — the source UI has the same
+            restriction. */}
         <div className="p-4 bg-evs-gray-darker">
           <h2 className="text-xs font-semibold tracking-widest text-evs-gray-lighter uppercase mb-3">Maintenance</h2>
           <div className="bg-evs-gray-dark rounded-xs border border-evs-gray p-3 flex flex-wrap gap-2">
+            <button
+              onClick={() => handleMaintenance(
+                'clearDisk',
+                'Clear disk',
+                'Clear disk: protected events and recorded data will be erased. Current configuration is kept but no more data will be available. Continue?',
+              )}
+              disabled={isDemo || isModifyMode || maintenanceBusy !== null}
+              title={isModifyMode ? 'Apply configuration first, or cancel your modification' : isDemo ? 'Not available in preview mode' : undefined}
+              className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors disabled:opacity-40"
+            >
+              {maintenanceBusy === 'clearDisk' ? 'Clearing disk…' : 'Clear disk'}
+            </button>
+            <button
+              onClick={() => handleMaintenance(
+                'clearConfiguration',
+                'Clear configuration',
+                'Clear configuration: server configuration will be removed. Recordings stay intact. Continue?',
+              )}
+              disabled={isDemo || isModifyMode || maintenanceBusy !== null}
+              title={isModifyMode ? 'Apply configuration first, or cancel your modification' : isDemo ? 'Not available in preview mode' : undefined}
+              className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors disabled:opacity-40"
+            >
+              {maintenanceBusy === 'clearConfiguration' ? 'Clearing config…' : 'Clear configuration'}
+            </button>
+            <button
+              onClick={() => handleMaintenance(
+                'restartPlayouts',
+                'Restart playouts',
+                'Restart playouts: outputs will be unavailable for a few seconds. Continue?',
+              )}
+              disabled={isDemo || isModifyMode || maintenanceBusy !== null}
+              title={isModifyMode ? 'Apply configuration first, or cancel your modification' : isDemo ? 'Not available in preview mode' : undefined}
+              className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors disabled:opacity-40"
+            >
+              {maintenanceBusy === 'restartPlayouts' ? 'Restarting playouts…' : 'Restart playouts'}
+            </button>
             {!isDemo && (
               <a
-                href={`http://${serverConfig.ip}:9081/`}
+                href={`http://${serverConfig.ip}/xrneo-maintenance`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors"
               >
-                Services Management
+                Services Management Tool
               </a>
             )}
+            {/* Visual divider between the four standard maintenance
+                actions and the harder host-level ones below. */}
+            <span className="w-px bg-evs-gray mx-1" />
             <button
               onClick={() => setRestartOpen(true)}
               disabled={isDemo}
@@ -230,25 +311,28 @@ export default function ConfigTab({
         </div>
       </div>
 
-      {/* Configuration */}
+      {/* Configuration — section layout mirrors the source XR-Neo Xeebra
+          Configuration page: Common configuration / Recorders configuration
+          (with per-recorder table) / Playouts configuration. Modify button
+          sits at the bottom and gates editing of every field above. */}
       <div className="p-4">
         <h2 className="text-xs font-semibold tracking-widest text-evs-gray-lighter uppercase mb-3">Configuration</h2>
-        <div className="bg-evs-gray-dark rounded-xs border border-evs-gray p-4 space-y-5">
-          {/* Common */}
+        <div className="bg-evs-gray-dark rounded-xs border border-evs-gray p-4 space-y-6">
+          {/* Common configuration */}
           <div>
-            <h3 className="text-sm font-medium text-evs-contrast mb-3">Common</h3>
+            <h3 className="text-sm font-medium text-evs-contrast mb-3">Common configuration</h3>
             <div className="grid grid-cols-3 gap-4">
-              <Field label="Video Format">
+              <Field label="Video format *">
                 <Select value={formData.videoFormat} disabled={fieldsDisabled}
                   onChange={v => setFormData(p => ({ ...p, videoFormat: v }))}
                   options={['1080i', '1080p', '720p', '4K']} />
               </Field>
-              <Field label="Sample Rate">
+              <Field label="Sample rate *">
                 <Select value={formData.sampleRate} disabled={fieldsDisabled}
                   onChange={v => setFormData(p => ({ ...p, sampleRate: v }))}
                   options={['25', '50', '29.97', '59.94']} />
               </Field>
-              <Field label="HDR Profile">
+              <Field label="HDR profile *">
                 <Select value={formData.hdrProfile} disabled={fieldsDisabled}
                   onChange={v => setFormData(p => ({ ...p, hdrProfile: v }))}
                   options={['SDR', 'HDR10', 'HLG']} />
@@ -256,25 +340,80 @@ export default function ConfigTab({
             </div>
           </div>
 
-          {/* Recorders */}
+          {/* Recorders configuration — header row + per-recorder list. */}
           <div>
-            <h3 className="text-sm font-medium text-evs-contrast mb-3">Recorders</h3>
-            <div className="grid grid-cols-3 gap-4">
-              <Field label="Inputs">
-                <input
-                  type="number" value={formData.numberOfInputs} disabled={fieldsDisabled}
-                  onChange={e => setFormData(p => ({ ...p, numberOfInputs: e.target.value }))}
-                  className="w-full bg-evs-gray-darker border border-evs-gray rounded-xs px-3 py-1.5 text-sm text-evs-contrast disabled:opacity-50 focus:outline-none focus:border-evs-primary" />
+            <h3 className="text-sm font-medium text-evs-contrast mb-3">Recorders configuration</h3>
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <Field label="Number of inputs *">
+                <NumberStepper
+                  value={Number(formData.numberOfInputs) || 0}
+                  disabled={fieldsDisabled}
+                  onChange={n => setFormData(p => ({ ...p, numberOfInputs: String(n) }))}
+                />
               </Field>
-              <Field label="Transport">
+              <Field label="Transport *">
                 <Select value={formData.transport} disabled={fieldsDisabled}
                   onChange={v => setFormData(p => ({ ...p, transport: v }))}
                   options={['SDI', 'IP', 'SRT', 'NDI']} />
               </Field>
-              <Field label="Audio Channels">
+              <Field label="Audio channels *">
                 <Select value={formData.audioChannels} disabled={fieldsDisabled}
                   onChange={v => setFormData(p => ({ ...p, audioChannels: v }))}
                   options={['2', '4', '8', '16']} />
+              </Field>
+            </div>
+            {/* Per-recorder list with name / SLSM / SDI port — same shape
+                as the source UI's recorders table. Rendered read-only
+                here; row editing comes in a later pass. */}
+            {serverConfig.recordersConfiguration?.recordersList && serverConfig.recordersConfiguration.recordersList.length > 0 && (
+              <div className="border border-evs-gray rounded-xs overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-evs-gray-lighter border-b border-evs-gray bg-evs-gray-darker">
+                      <th className="text-left px-3 py-2 font-medium">SDI Recorder name *</th>
+                      <th className="text-left px-3 py-2 font-medium w-24">SLSM *</th>
+                      <th className="text-left px-3 py-2 font-medium w-32">SDI port *</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {serverConfig.recordersConfiguration.recordersList.map((r, i) => {
+                      const bp = r.recorderSdiConfiguration?.boardPorts?.[0];
+                      const portLabel = bp ? `SDI port I${(bp.port ?? 0) + 1}` : '—';
+                      return (
+                        <tr key={i} className="border-b border-evs-gray/50 last:border-0">
+                          <td className="px-3 py-2 text-evs-contrast">{r.recorderName}</td>
+                          <td className="px-3 py-2 text-evs-gray-lighter">{r.slsmType ?? 'NO'}</td>
+                          <td className="px-3 py-2 text-evs-gray-lighter">{portLabel}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          {/* Playouts configuration — separate section in the source UI.
+              On an SDI-only deployment (most current Xeebras) this is
+              empty / zero outputs, but keep the section visible so the
+              field shape matches the source. */}
+          <div>
+            <h3 className="text-sm font-medium text-evs-contrast mb-3">Playouts configuration</h3>
+            <div className="grid grid-cols-3 gap-4">
+              <Field label="Number of outputs *">
+                <NumberStepper
+                  value={serverConfig.playoutsConfiguration?.playoutsList?.length ?? 0}
+                  disabled
+                  onChange={() => {}}
+                />
+              </Field>
+              <Field label="Transport *">
+                <Select
+                  value={serverConfig.playoutsConfiguration?.transport ?? 'SDI'}
+                  disabled
+                  onChange={() => {}}
+                  options={['SDI', 'IP', 'SRT', 'NDI']}
+                />
               </Field>
             </div>
           </div>
@@ -317,36 +456,6 @@ export default function ConfigTab({
           </div>
         </div>
       </div>
-
-      {/* Recorders list */}
-      {serverConfig.recordersConfiguration?.recordersList && serverConfig.recordersConfiguration.recordersList.length > 0 && (
-        <div className="px-4 pb-4">
-          <h2 className="text-xs font-semibold tracking-widest text-evs-gray-lighter uppercase mb-3">Recorder Inputs</h2>
-          <div className="bg-evs-gray-dark rounded-xs border border-evs-gray overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-evs-gray text-xs text-evs-gray-lighter">
-                  <th className="text-left px-4 py-2 font-medium">Name</th>
-                  <th className="text-left px-4 py-2 font-medium">Board</th>
-                  <th className="text-left px-4 py-2 font-medium">Port</th>
-                </tr>
-              </thead>
-              <tbody>
-                {serverConfig.recordersConfiguration.recordersList.map((r, i) => {
-                  const bp = r.recorderSdiConfiguration?.boardPorts?.[0];
-                  return (
-                    <tr key={i} className="border-b border-evs-gray/50 last:border-0 hover:bg-evs-gray/30 transition-colors">
-                      <td className="px-4 py-2 text-evs-contrast">{r.recorderName}</td>
-                      <td className="px-4 py-2 text-evs-gray-lighter">{bp?.board ?? '—'}</td>
-                      <td className="px-4 py-2 text-evs-gray-lighter">{bp?.port ?? '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {server && !isDemo && (
         <ShutdownModal
@@ -416,5 +525,29 @@ function Select({ value, options, disabled, onChange }: {
     >
       {options.map(o => <option key={o} value={o}>{o}</option>)}
     </select>
+  );
+}
+
+// NumberStepper: −/+ buttons either side of a centred read-only display.
+// Mirrors the source UI's "Number of inputs / outputs" control. Clamps at
+// 0 — the source caps at the licence-allowed maximum but we don't have
+// that figure here so leave the upper bound open.
+function NumberStepper({ value, disabled, onChange }: {
+  value: number; disabled: boolean; onChange: (n: number) => void;
+}) {
+  const dec = () => { if (!disabled) onChange(Math.max(0, value - 1)); };
+  const inc = () => { if (!disabled) onChange(value + 1); };
+  return (
+    <div className="flex items-stretch border border-evs-gray rounded-xs overflow-hidden bg-evs-gray-darker">
+      <button
+        type="button" onClick={dec} disabled={disabled || value <= 0}
+        className="px-3 text-evs-contrast hover:bg-evs-gray disabled:opacity-30 disabled:cursor-not-allowed"
+      >−</button>
+      <div className="flex-1 text-center px-2 py-1.5 text-sm text-evs-contrast tabular-nums">{value}</div>
+      <button
+        type="button" onClick={inc} disabled={disabled}
+        className="px-3 text-evs-contrast hover:bg-evs-gray disabled:opacity-30 disabled:cursor-not-allowed"
+      >+</button>
+    </div>
   );
 }
