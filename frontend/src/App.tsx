@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { Columns2, Rows2, X } from 'lucide-react';
+import { Toaster } from 'sonner';
 import type { AppConfig, XeebraConfigServer } from '@/types';
 import { loadJSON, storeJSON } from '@/utils/storage';
+import { useHealthAlerts } from '@/hooks/useHealthAlerts';
 import Sidebar from '@/components/Sidebar';
 import SettingsTab from '@/components/SettingsTab';
 import ServerView, { type ServerTab } from '@/components/ServerView';
@@ -100,6 +102,15 @@ export default function App() {
     const id = setInterval(fetchServerList, 10_000);
     return () => clearInterval(id);
   }, [fetchServerList]);
+
+  // Health alerts polling — runs whenever we have a non-demo server list.
+  // Drives the sidebar critical/warning badges + sonner toasts on
+  // freshly-degraded entries.
+  const alertServers = useMemo(
+    () => serverList.map((s) => ({ id: s.id, ip: s.ip, name: s.name })),
+    [serverList],
+  );
+  const { byServerId: alertCounts } = useHealthAlerts(alertServers, isDemo);
 
   // Validate persisted server ids against the live list — drop unknowns
   // so a deleted/renamed server doesn't render an empty pane forever.
@@ -246,6 +257,9 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-evs-gray-darker overflow-hidden">
+      {/* Toast layer for health-check alerts (and any future ad-hoc
+          notifications). Theme-matches the app — dark background. */}
+      <Toaster theme="dark" position="top-right" richColors closeButton />
       {/* ── Top nav ─────────────────────────────────────────────────────── */}
       <nav className="bg-evs-gray-dark shrink-0 h-14 flex items-center px-4 shadow border-b border-evs-gray z-50">
         <div className="flex items-center gap-2.5 min-w-0">
@@ -305,6 +319,7 @@ export default function App() {
               serverListError={serverListError}
               selectedServerId={groupState.leftServerId}
               onSelectServer={handleSidebarSelect}
+              alertCounts={alertCounts}
             />
             <div className={`flex-1 flex p-2 gap-2 min-h-0 ${splitActive && groupState.splitDir === 'v' ? 'flex-col' : 'flex-row'}`}>
               <ServerView
