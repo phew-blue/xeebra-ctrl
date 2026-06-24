@@ -39,12 +39,13 @@ jobs:
 
   # ──────────────────────────────────────────────────────────────────
   # Full build — frontend + Go binary + (on tags) Inno Setup installer
-  # Runs on Windows so CGO syscall dependencies compile natively
+  # Runs on Windows so CGO syscall dependencies compile natively.
+  # Self-hosted pool (DT-02) — choco + Inno Setup are pre-installed on the host.
   # ──────────────────────────────────────────────────────────────────
   build:
     name: Build
     needs: check-types
-    runs-on: windows-latest
+    runs-on: home-ops-windows
     permissions:
       contents: write
     steps:
