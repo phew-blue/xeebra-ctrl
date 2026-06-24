@@ -52,7 +52,7 @@ jobs:
 
   installer:
     name: Build dev installer
-    runs-on: windows-latest
+    runs-on: home-ops-windows
     permissions:
       contents: read
     steps:
