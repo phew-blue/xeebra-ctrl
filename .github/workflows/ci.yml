@@ -16,14 +16,14 @@ jobs:
   # ──────────────────────────────────────────────────────────────────
   check-types:
     name: Type check
-    runs-on: home-ops
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
       - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
         with:
+          package_json_file: frontend/package.json
           run_install: false
-          package_json_path: frontend/package.json
 
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
@@ -38,13 +38,38 @@ jobs:
         working-directory: frontend
 
   # ──────────────────────────────────────────────────────────────────
+  # Container image build — validation only, never pushed.
+  # The Dev workflow pushes this image on merge to main; without this job
+  # nothing exercises the Dockerfile on a PR, so a broken build only surfaces
+  # after it has already landed.
+  # ──────────────────────────────────────────────────────────────────
+  build-image:
+    name: Build container image
+    needs: check-types
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=xeebra-ctrl
+          cache-to: type=gha,mode=max,scope=xeebra-ctrl
+
+  # ──────────────────────────────────────────────────────────────────
   # Full build — frontend + Go binary + (on tags) Inno Setup installer
-  # Runs on Windows so CGO syscall dependencies compile natively
+  # Runs on Windows so CGO syscall dependencies compile natively.
+  # GitHub-hosted windows-latest by default; set the WINDOWS_RUNNER variable to
+  # target a self-hosted pool (e.g. DT-02). Inno Setup is installed via choco below.
   # ──────────────────────────────────────────────────────────────────
   build:
     name: Build
     needs: check-types
-    runs-on: windows-latest
+    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
     permissions:
       contents: write
     steps:
@@ -52,8 +77,8 @@ jobs:
 
       - uses: pnpm/action-setup@41ff72655975bd51cab0327fa583b6e92b6d3061 # v4
         with:
+          package_json_file: frontend/package.json
           run_install: false
-          package_json_path: frontend/package.json
 
       - uses: actions/setup-node@53b83947a5a98c8d113130e565377fae1a50d02f # v6
         with:
