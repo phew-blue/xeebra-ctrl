@@ -17,6 +17,7 @@ jobs:
           fetch-depth: 0
 
       - name: Check for release commit and tag
+        id: tag
         run: |
           COMMIT_MSG=$(git log -1 --pretty=%s)
           echo "Commit: $COMMIT_MSG"
@@ -38,7 +39,43 @@ jobs:
             git config user.email "github-actions[bot]@users.noreply.github.com"
             git tag "$VERSION"
             git push origin "$VERSION"
+            echo "version=$VERSION" >> "$GITHUB_OUTPUT"
             echo "Tagged and pushed $VERSION"
           else
             echo "Not a release commit — skipping"
           fi
+
+      # A release bumps the version files on main only. Left there, the next
+      # release branch is cut from a stale version and conflicts with main on
+      # exactly those files. Merge it straight back instead.
+      - name: Merge main back into dev
+        if: steps.tag.outputs.version != ''
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git fetch origin dev
+
+          if git merge-base --is-ancestor origin/main origin/dev; then
+            echo "dev already contains main — nothing to merge"
+            exit 0
+          fi
+
+          git checkout -B dev origin/dev
+          if ! git merge --no-edit origin/main -m "Merge main into dev (${{ steps.tag.outputs.version }})"; then
+            git merge --abort || true
+            echo "::error::main does not merge cleanly into dev. ${{ steps.tag.outputs.version }} is tagged and released; merge it down by hand."
+            exit 1
+          fi
+
+          # dev also takes ordinary pushes, so a bare push can race.
+          for attempt in 1 2 3 4 5; do
+            if git push origin dev; then
+              echo "Merged main into dev"
+              exit 0
+            fi
+            echo "Push rejected (attempt ${attempt}/5) — rebasing on origin/dev"
+            git pull --rebase origin dev
+          done
+          echo "::error::Failed to push dev after 5 attempts"
+          exit 1
