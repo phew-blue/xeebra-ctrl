@@ -53,6 +53,17 @@ jobs:
             exit 1
           fi
 
+          # auto-tag now merges main back after every release, so this should
+          # not trigger — it is here so that if it ever does, it fails at the
+          # start rather than as an unmergeable pull request.
+          git fetch origin main
+          if ! git merge-base --is-ancestor origin/main HEAD; then
+            BEHIND=$(git rev-list --count HEAD..origin/main)
+            echo "::error::main has ${BEHIND} commit(s) dev does not. Merge main into dev before cutting."
+            git --no-pager log --oneline HEAD..origin/main | head -10
+            exit 1
+          fi
+
       - name: Bump versions
         run: |
           VERSION_NUMBER="${VERSION#v}"
