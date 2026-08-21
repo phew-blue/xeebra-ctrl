@@ -85,6 +85,7 @@ func (s *server) start() {
 	mux.HandleFunc("GET /api/proxy", s.handleProxyGet)
 	mux.HandleFunc("POST /api/proxy", s.handleProxyPost)
 	mux.HandleFunc("GET /api/proxy-image", s.handleProxyImage)
+	mux.HandleFunc("GET /api/platform", s.handleProxyPlatform)
 	mux.HandleFunc("POST /api/shutdown", s.handleShutdown)
 	mux.HandleFunc("POST /api/restart", s.handleRestart)
 	mux.HandleFunc("POST /api/settings/groups", s.handleCreateGroup)
@@ -252,6 +253,28 @@ func (s *server) handleProxyImage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	target := fmt.Sprintf("http://%s:9081/api/platform-console/metrics/sdichannelpicture?sdiboard=%s&sdiport=%s", ip, board, port)
+	proxyGet(w, target)
+}
+
+// GET /api/platform?ip=ADDR&path=health/checks
+//
+// Proxies platform-console endpoints on :9081. Separate from /api/proxy (which
+// hits the haproxy frontend on :80) because the cluster REST and the
+// platform-console run on different ports — and the platform-console keeps
+// working when haproxy/docker is broken (real failure mode observed when a
+// firewall reload flushes docker swarm chains).
+//
+// Path is appended to /api/platform-console/<path> on the device. Strips a
+// leading "/" if the caller includes one to keep the call site forgiving.
+func (s *server) handleProxyPlatform(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	ip := q.Get("ip")
+	path := strings.TrimPrefix(q.Get("path"), "/")
+	if ip == "" || path == "" {
+		http.Error(w, "ip and path required", http.StatusBadRequest)
+		return
+	}
+	target := fmt.Sprintf("http://%s:9081/api/platform-console/%s", ip, path)
 	proxyGet(w, target)
 }
 

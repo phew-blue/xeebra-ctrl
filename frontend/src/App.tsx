@@ -1,88 +1,51 @@
-import { useState, useEffect, useCallback } from 'react';
-import type { AppConfig, XeebraConfigServer, XeebraServerConfiguration } from '@/types';
+import { useState, useEffect, useCallback, useMemo } from 'react';
+import { Columns2, Rows2, X } from 'lucide-react';
+import { Toaster } from 'sonner';
+import type { AppConfig, XeebraConfigServer } from '@/types';
+import { loadJSON, storeJSON } from '@/utils/storage';
+import { useHealthAlerts } from '@/hooks/useHealthAlerts';
 import Sidebar from '@/components/Sidebar';
-import MonitoringTab from '@/components/MonitoringTab';
-import ConfigTab from '@/components/ConfigTab';
 import SettingsTab from '@/components/SettingsTab';
+import ServerView, { type ServerTab } from '@/components/ServerView';
 
-type Tab = 'monitoring' | 'config' | 'settings';
+type View = 'main' | 'settings';
 
-// ─── Demo data injected when apiServerIp === '0.0.0.0' ───────────────────────
-
+// Demo servers used when the active group is configured with the
+// 0.0.0.0 placeholder IP (preview mode in nginx mock).
 const DEMO_SERVERS: XeebraConfigServer[] = [
   { id: 'xbr-01', ip: '192.168.1.101', name: 'XBR-01', status: 'RUNNING' },
   { id: 'xbr-02', ip: '192.168.1.102', name: 'XBR-02', status: 'STOPPED' },
   { id: 'xbr-03', ip: '192.168.1.103', name: 'XBR-03', status: 'OFFLINE' },
 ];
 
-const DEMO_CONFIGS: Record<string, XeebraServerConfiguration> = {
-  'xbr-01': {
-    ip: '192.168.1.101',
-    status: 'RUNNING',
-    characteristics: { serverName: 'Xeebra XS-1', version: '23.4.1' },
-    ntpInfo: { ntpType: 'SERVER', ntpStatus: 'OK' },
-    connectedClients: ['192.168.1.50', '192.168.1.51'],
-    commonConfiguration: { videoFormat: '1080i', sampleRate: '25', hdrProfile: 'SDR' },
-    recordersConfiguration: {
-      transport: 'SDI',
-      audioChannelsCount: 16,
-      recordersList: [
-        { recorderName: 'REC-A', recorderSdiConfiguration: { boardPorts: [{ board: 1, port: 1 }] } },
-        { recorderName: 'REC-B', recorderSdiConfiguration: { boardPorts: [{ board: 1, port: 2 }] } },
-        { recorderName: 'REC-C', recorderSdiConfiguration: { boardPorts: [{ board: 1, port: 3 }] } },
-        { recorderName: 'REC-D', recorderSdiConfiguration: { boardPorts: [{ board: 1, port: 4 }] } },
-      ],
-    },
-  },
-  'xbr-02': {
-    ip: '192.168.1.102',
-    status: 'STOPPED',
-    characteristics: { serverName: 'Xeebra XS-2', version: '23.4.1' },
-    ntpInfo: { ntpType: 'CLIENT', ntpStatus: 'SYNCHRONIZED' },
-    connectedClients: [],
-    commonConfiguration: { videoFormat: '1080p', sampleRate: '50', hdrProfile: 'HDR10' },
-    recordersConfiguration: {
-      transport: 'IP',
-      audioChannelsCount: 8,
-      recordersList: [
-        { recorderName: 'REC-A', recorderSdiConfiguration: { boardPorts: [{ board: 1, port: 1 }] } },
-        { recorderName: 'REC-B', recorderSdiConfiguration: { boardPorts: [{ board: 1, port: 2 }] } },
-      ],
-    },
-  },
-  'xbr-03': {
-    ip: '192.168.1.103',
-    status: 'OFFLINE',
-    characteristics: { serverName: 'Xeebra XS-3', version: '23.3.0' },
-    ntpInfo: { ntpType: 'CLIENT', ntpStatus: 'NOT_SYNCHRONIZED' },
-    connectedClients: [],
-    commonConfiguration: { videoFormat: '1080i', sampleRate: '25', hdrProfile: 'SDR' },
-    recordersConfiguration: {
-      transport: 'SDI',
-      audioChannelsCount: 4,
-      recordersList: [
-        { recorderName: 'REC-A', recorderSdiConfiguration: { boardPorts: [{ board: 1, port: 1 }] } },
-      ],
-    },
-  },
+// Persisted-per-group UI state. Bumped via storage util's version arg if
+// shape changes — old entries auto-invalidate.
+const PERSIST_VERSION = '1';
+type GroupUIState = {
+  leftServerId: string | null;
+  rightServerId: string | null;
+  splitDir: 'h' | 'v' | null; // null = single pane
+  leftTab: ServerTab;
+  rightTab: ServerTab;
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
+const emptyGroupState = (): GroupUIState => ({
+  leftServerId: null,
+  rightServerId: null,
+  splitDir: null,
+  leftTab: 'monitoring',
+  rightTab: 'monitoring',
+});
+const groupStorageKey = (groupName: string) => `group:${groupName}`;
 
 export default function App() {
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
+  const [view, setView] = useState<View>('main');
 
   const [selectedGroupIdx, setSelectedGroupIdx] = useState<number | null>(null);
   const [serverList, setServerList] = useState<XeebraConfigServer[]>([]);
   const [serverListError, setServerListError] = useState<string | null>(null);
-
-  const [selectedServerId, setSelectedServerId] = useState<string | null>(null);
-  const [serverConfig, setServerConfig] = useState<XeebraServerConfiguration | null>(null);
-  const [serverConfigLoading, setServerConfigLoading] = useState(false);
-  const [serverConfigError, setServerConfigError] = useState<string | null>(null);
-
-  const [activeTab, setActiveTab] = useState<Tab>('monitoring');
+  const [groupState, setGroupState] = useState<GroupUIState>(emptyGroupState());
 
   // Load app config on mount
   useEffect(() => {
@@ -95,83 +58,186 @@ export default function App() {
       .catch(() => setConfigError('Failed to load config'));
   }, []);
 
-  const isDemo = config !== null && selectedGroupIdx !== null &&
-    config.groups[selectedGroupIdx]?.apiServerIp === '0.0.0.0';
+  const selectedGroup = config && selectedGroupIdx !== null ? config.groups[selectedGroupIdx] : null;
+  const isDemo = selectedGroup?.apiServerIp === '0.0.0.0';
 
-  // Fetch server list when group changes
+  // Hydrate per-group UI state when group changes.
+  useEffect(() => {
+    if (!selectedGroup) {
+      setGroupState(emptyGroupState());
+      return;
+    }
+    const saved = loadJSON<GroupUIState>(groupStorageKey(selectedGroup.name), PERSIST_VERSION);
+    setGroupState(saved ?? emptyGroupState());
+  }, [selectedGroup?.name]);
+
+  // Persist on every state change (only when we have a real group).
+  useEffect(() => {
+    if (!selectedGroup) return;
+    storeJSON(groupStorageKey(selectedGroup.name), groupState, PERSIST_VERSION);
+  }, [selectedGroup?.name, groupState]);
+
+  // Fetch server list (real or demo) on group change + every 10s.
   const fetchServerList = useCallback(async () => {
-    if (config === null || selectedGroupIdx === null) return;
-    const group = config.groups[selectedGroupIdx];
-
-    if (group.apiServerIp === '0.0.0.0') {
+    if (!selectedGroup) return;
+    if (selectedGroup.apiServerIp === '0.0.0.0') {
       setServerList(DEMO_SERVERS);
       setServerListError(null);
       return;
     }
-
     try {
       const data = await fetch(
-        `/api/proxy?ip=${encodeURIComponent(group.apiServerIp)}&path=${encodeURIComponent('/api/xeebra-config/servers')}`
+        `/api/proxy?ip=${encodeURIComponent(selectedGroup.apiServerIp)}&path=${encodeURIComponent('/api/xeebra-config/servers')}`,
       ).then(r => r.json());
       setServerList(Array.isArray(data) ? data : []);
       setServerListError(null);
     } catch {
       setServerListError('Cannot reach Xeebra server');
     }
-  }, [config, selectedGroupIdx]);
+  }, [selectedGroup]);
 
   useEffect(() => {
     setServerList([]);
-    setSelectedServerId(null);
     fetchServerList();
     const id = setInterval(fetchServerList, 10_000);
     return () => clearInterval(id);
   }, [fetchServerList]);
 
-  // Fetch selected server config
-  const fetchServerConfig = useCallback(async () => {
-    if (config === null || selectedGroupIdx === null || selectedServerId === null) return;
-    const group = config.groups[selectedGroupIdx];
+  // Health alerts polling — runs whenever we have a non-demo server list.
+  // Drives the sidebar critical/warning badges + sonner toasts on
+  // freshly-degraded entries.
+  const alertServers = useMemo(
+    () => serverList.map((s) => ({ id: s.id, ip: s.ip, name: s.name })),
+    [serverList],
+  );
+  const { byServerId: alertCounts } = useHealthAlerts(alertServers, isDemo);
 
-    if (group.apiServerIp === '0.0.0.0') {
-      setServerConfig(DEMO_CONFIGS[selectedServerId] ?? null);
-      setServerConfigError(null);
-      return;
-    }
-
-    setServerConfigLoading(true);
-    try {
-      const data: XeebraServerConfiguration = await fetch(
-        `/api/proxy?ip=${encodeURIComponent(group.apiServerIp)}&path=${encodeURIComponent(`/api/xeebra-config/servers/${selectedServerId}/configuration`)}`
-      ).then(r => r.json());
-      setServerConfig(data);
-      setServerConfigError(null);
-    } catch {
-      setServerConfigError('Failed to load server configuration');
-    } finally {
-      setServerConfigLoading(false);
-    }
-  }, [config, selectedGroupIdx, selectedServerId]);
-
+  // Validate persisted server ids against the live list — drop unknowns
+  // so a deleted/renamed server doesn't render an empty pane forever.
   useEffect(() => {
-    setServerConfig(null);
-    fetchServerConfig();
-    const id = setInterval(fetchServerConfig, 10_000);
-    return () => clearInterval(id);
-  }, [fetchServerConfig]);
+    if (serverList.length === 0) return;
+    const valid = new Set(serverList.map(s => s.id));
+    setGroupState(prev => {
+      let next = prev;
+      if (prev.leftServerId && !valid.has(prev.leftServerId)) {
+        next = { ...next, leftServerId: serverList[0]?.id ?? null };
+      }
+      if (prev.rightServerId && !valid.has(prev.rightServerId)) {
+        next = { ...next, rightServerId: null, splitDir: null };
+      }
+      // Default left pane to first server on first hydration.
+      if (next.leftServerId === null && serverList.length > 0) {
+        next = { ...next, leftServerId: serverList[0].id };
+      }
+      return next === prev ? prev : next;
+    });
+  }, [serverList]);
+
+  // Sidebar selection sets the LEFT pane.
+  const handleSidebarSelect = useCallback((id: string) => {
+    setGroupState(prev => {
+      // If sidebar pick collides with right pane, move right to next free
+      // server so we don't render the same one twice.
+      if (prev.splitDir && prev.rightServerId === id) {
+        const next = serverList.find(s => s.id !== id);
+        return { ...prev, leftServerId: id, rightServerId: next?.id ?? null };
+      }
+      return { ...prev, leftServerId: id };
+    });
+    setView('main');
+  }, [serverList]);
 
   const handleConfigChange = useCallback((updated: AppConfig) => {
     setConfig(updated);
-    if (updated.groups.length > 0 && selectedGroupIdx === null) {
-      setSelectedGroupIdx(0);
-    }
+    if (updated.groups.length > 0 && selectedGroupIdx === null) setSelectedGroupIdx(0);
     if (selectedGroupIdx !== null && selectedGroupIdx >= updated.groups.length) {
       setSelectedGroupIdx(updated.groups.length > 0 ? 0 : null);
     }
   }, [selectedGroupIdx]);
 
-  const selectedGroup = config && selectedGroupIdx !== null ? config.groups[selectedGroupIdx] : null;
-  const selectedServer = serverList.find(s => s.id === selectedServerId) ?? null;
+  // Split-view toggle helpers — same shape as lexi's xeebra subview, mirrored
+  // here so both products behave identically.
+  const canSplit = serverList.length >= 2;
+  const splitActive = groupState.splitDir !== null && canSplit;
+
+  const enableSplit = (dir: 'h' | 'v') => {
+    setGroupState(prev => {
+      if (prev.rightServerId && serverList.some(s => s.id === prev.rightServerId)) {
+        return { ...prev, splitDir: dir };
+      }
+      const next = serverList.find(s => s.id !== prev.leftServerId);
+      return { ...prev, splitDir: dir, rightServerId: next?.id ?? null };
+    });
+  };
+  const disableSplit = () => setGroupState(prev => ({ ...prev, splitDir: null }));
+  const flipSplit = () => setGroupState(prev => ({ ...prev, splitDir: prev.splitDir === 'h' ? 'v' : 'h' }));
+
+  // Collision-avoidance handlers for the dropdowns.
+  const handleLeftSelect = (id: string | null) => {
+    setGroupState(prev => {
+      if (id && id === prev.rightServerId) {
+        const fallback = serverList.find(s => s.id !== id);
+        return { ...prev, leftServerId: id, rightServerId: fallback?.id ?? null };
+      }
+      return { ...prev, leftServerId: id };
+    });
+  };
+  const handleRightSelect = (id: string | null) => {
+    setGroupState(prev => {
+      if (id && id === prev.leftServerId) {
+        const fallback = serverList.find(s => s.id !== id);
+        return { ...prev, rightServerId: id, leftServerId: fallback?.id ?? prev.leftServerId };
+      }
+      return { ...prev, rightServerId: id };
+    });
+  };
+
+  const splitButtons = useMemo(() => {
+    if (!canSplit) return null;
+    if (splitActive) {
+      return (
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={flipSplit}
+            title={groupState.splitDir === 'h' ? 'Switch to vertical split' : 'Switch to horizontal split'}
+            className="p-1 rounded-xs text-evs-gray-lighter hover:text-evs-contrast hover:bg-evs-gray"
+          >
+            {groupState.splitDir === 'h' ? <Rows2 size={14} /> : <Columns2 size={14} />}
+          </button>
+          <button
+            type="button"
+            onClick={disableSplit}
+            title="Close split view"
+            className="p-1 rounded-xs text-evs-gray-lighter hover:text-evs-contrast hover:bg-evs-gray"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-center gap-1">
+        <button
+          type="button"
+          onClick={() => enableSplit('h')}
+          title="Split — show two Xeebras side by side"
+          className="p-1 rounded-xs text-evs-gray-lighter hover:text-evs-contrast hover:bg-evs-gray"
+        >
+          <Columns2 size={14} />
+        </button>
+        <button
+          type="button"
+          onClick={() => enableSplit('v')}
+          title="Split — show two Xeebras stacked"
+          className="p-1 rounded-xs text-evs-gray-lighter hover:text-evs-contrast hover:bg-evs-gray"
+        >
+          <Rows2 size={14} />
+        </button>
+      </div>
+    );
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canSplit, splitActive, groupState.splitDir, serverList, groupState.leftServerId]);
 
   if (configError) {
     return (
@@ -191,30 +257,28 @@ export default function App() {
 
   return (
     <div className="flex flex-col h-screen bg-evs-gray-darker overflow-hidden">
-      {/* ── Top nav (Lexi-style) ─────────────────────────────────────────── */}
+      {/* Toast layer for health-check alerts (and any future ad-hoc
+          notifications). Theme-matches the app — dark background. */}
+      <Toaster theme="dark" position="top-right" richColors closeButton />
+      {/* ── Top nav ─────────────────────────────────────────────────────── */}
       <nav className="bg-evs-gray-dark shrink-0 h-14 flex items-center px-4 shadow border-b border-evs-gray z-50">
         <div className="flex items-center gap-2.5 min-w-0">
-          <img src="/favicon.svg" alt="" className="h-5 w-5 opacity-80" />
-          <span className="text-evs-contrast font-semibold tracking-wide text-sm">
-            Xeebra CTRL
-          </span>
+          <img src="/phew-blue-logo.svg" alt="" className="h-5 w-5 opacity-80" />
+          <span className="text-evs-contrast font-semibold tracking-wide text-sm">Xeebra CTRL</span>
         </div>
         {isDemo && (
           <span className="ml-4 text-xs bg-evs-warning/20 text-evs-warning px-2 py-0.5 rounded-xs">
             Preview mode
           </span>
         )}
-        {/* Group selector (if multiple groups) */}
         {config.groups.length > 1 && (
           <div className="ml-6 flex items-center gap-1">
             {config.groups.map((g, i) => (
               <button
                 key={i}
-                onClick={() => { setSelectedGroupIdx(i); setSelectedServerId(null); }}
+                onClick={() => { setSelectedGroupIdx(i); setView('main'); }}
                 className={`px-3 py-1.5 rounded-xs text-sm transition-colors ${
-                  selectedGroupIdx === i
-                    ? 'text-evs-primary'
-                    : 'text-evs-contrast hover:text-evs-primary'
+                  selectedGroupIdx === i ? 'text-evs-primary' : 'text-evs-contrast hover:text-evs-primary'
                 }`}
               >
                 {g.name}
@@ -222,12 +286,11 @@ export default function App() {
             ))}
           </div>
         )}
-        {/* Settings button */}
         <button
-          onClick={() => setActiveTab(activeTab === 'settings' ? 'monitoring' : 'settings')}
+          onClick={() => setView(view === 'settings' ? 'main' : 'settings')}
           title="Settings"
           className={`ml-auto p-2 rounded-xs transition-colors ${
-            activeTab === 'settings'
+            view === 'settings'
               ? 'text-evs-primary bg-evs-gray'
               : 'text-evs-gray-lighter hover:text-evs-contrast hover:bg-evs-gray/50'
           }`}
@@ -239,106 +302,55 @@ export default function App() {
         </button>
       </nav>
 
-      {/* ── Body ─────────────────────────────────────────────────────────── */}
+      {/* ── Body ────────────────────────────────────────────────────────── */}
       <div className="flex flex-1 min-h-0">
-        {activeTab === 'settings' ? (
+        {view === 'settings' ? (
           <div className="flex-1 overflow-y-auto bg-evs-gray-darker">
             <SettingsTab config={config} onConfigChange={handleConfigChange} />
           </div>
+        ) : !selectedGroup ? (
+          <div className="flex-1 flex items-center justify-center text-evs-gray-lighter">
+            No group selected — open Settings to add one.
+          </div>
         ) : (
           <>
-        {/* Sidebar */}
-        <Sidebar
-          serverList={serverList}
-          serverListError={serverListError}
-          selectedServerId={selectedServerId}
-          onSelectServer={id => { setSelectedServerId(id); setActiveTab('monitoring'); }}
-        />
-
-        {/* Main content */}
-        <div className="flex flex-col flex-1 min-w-0">
-          {/* Sub-header: server name + tab switcher */}
-          <div className="flex items-center gap-4 px-4 h-11 bg-evs-gray-dark border-b border-evs-gray shrink-0">
-            {selectedServer ? (
-              <>
-                <span className="font-medium text-evs-contrast">{selectedServer.name}</span>
-                <span className="text-evs-gray-lighter text-sm">{selectedServer.ip}</span>
-                <StatusBadge status={selectedServer.status} />
-                <div className="ml-auto flex gap-1">
-                  {(['monitoring', 'config'] as Tab[]).map(tab => (
-                    <button
-                      key={tab}
-                      onClick={() => setActiveTab(tab)}
-                      className={`px-3 py-1 rounded-xs text-sm capitalize transition-colors ${
-                        activeTab === tab
-                          ? 'bg-evs-primary text-white'
-                          : 'text-evs-gray-lighter hover:text-evs-contrast'
-                      }`}
-                    >
-                      {tab === 'config' ? 'Configuration' : 'Monitoring'}
-                    </button>
-                  ))}
-                </div>
-              </>
-            ) : (
-              <span className="text-evs-gray-lighter text-sm">
-                {selectedGroup ? 'Select a server' : 'Select a group'}
-              </span>
-            )}
-          </div>
-
-          {/* Tab content */}
-          <div className="flex-1 overflow-y-auto">
-            {!selectedServerId ? (
-              <div className="flex items-center justify-center h-full text-evs-gray-lighter">
-                Select a server from the sidebar
-              </div>
-            ) : activeTab === 'monitoring' ? (
-              <MonitoringTab
-                serverConfig={serverConfig}
-                loading={serverConfigLoading}
-                error={serverConfigError}
-                isDemo={isDemo}
+            <Sidebar
+              serverList={serverList}
+              serverListError={serverListError}
+              selectedServerId={groupState.leftServerId}
+              onSelectServer={handleSidebarSelect}
+              alertCounts={alertCounts}
+            />
+            <div className={`flex-1 flex p-2 gap-2 min-h-0 ${splitActive && groupState.splitDir === 'v' ? 'flex-col' : 'flex-row'}`}>
+              <ServerView
+                group={selectedGroup}
+                serverList={serverList}
+                reservedServerIds={groupState.rightServerId ? [groupState.rightServerId] : []}
+                selectedServerId={groupState.leftServerId}
+                onSelectServer={handleLeftSelect}
+                initialTab={groupState.leftTab}
+                onTabChange={t => setGroupState(prev => ({ ...prev, leftTab: t }))}
+                rightActions={splitActive ? null : splitButtons}
+                hideServerPicker={!splitActive}
+                splitMode={splitActive ? groupState.splitDir : null}
               />
-            ) : (
-              <ConfigTab
-                server={selectedServer}
-                serverConfig={serverConfig}
-                loading={serverConfigLoading}
-                error={serverConfigError}
-                apiServerIp={selectedGroup?.apiServerIp ?? ''}
-                sshUser={selectedGroup?.sshUser ?? 'evs'}
-                sshPassword={selectedGroup?.sshPassword ?? 'evs123'}
-                isDemo={isDemo}
-                onRefresh={fetchServerConfig}
-                onConfigSaved={(updated) => {
-                  if (isDemo && selectedServerId) {
-                    DEMO_CONFIGS[selectedServerId] = { ...DEMO_CONFIGS[selectedServerId], ...updated };
-                    setServerConfig(prev => prev ? { ...prev, ...updated } : prev);
-                  }
-                }}
-              />
-            )}
-          </div>
-        </div>
+              {splitActive && (
+                <ServerView
+                  group={selectedGroup}
+                  serverList={serverList}
+                  reservedServerIds={groupState.leftServerId ? [groupState.leftServerId] : []}
+                  selectedServerId={groupState.rightServerId}
+                  onSelectServer={handleRightSelect}
+                  initialTab={groupState.rightTab}
+                  onTabChange={t => setGroupState(prev => ({ ...prev, rightTab: t }))}
+                  rightActions={splitButtons}
+                  splitMode={groupState.splitDir}
+                />
+              )}
+            </div>
           </>
         )}
       </div>
     </div>
-  );
-}
-
-function StatusBadge({ status }: { status: string }) {
-  const colours: Record<string, string> = {
-    RUNNING: 'text-evs-success',
-    STOPPED: 'text-evs-gray-lighter',
-    ERROR: 'text-evs-danger',
-    OFFLINE: 'text-evs-danger',
-    NOT_CONNECTED: 'text-evs-gray-lighter',
-  };
-  return (
-    <span className={`text-xs font-medium uppercase tracking-wide ${colours[status] ?? 'text-evs-gray-lighter'}`}>
-      {status.replace('_', ' ')}
-    </span>
   );
 }

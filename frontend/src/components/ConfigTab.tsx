@@ -33,6 +33,10 @@ export default function ConfigTab({
   const [restartOpen, setRestartOpen] = useState(false);
   const [isModifyMode, setIsModifyMode] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  // Each maintenance action is independently spinnered so a slow one
+  // doesn't lock the others.
+  type MaintenanceAction = 'clearDisk' | 'clearConfiguration' | 'restartPlayouts';
+  const [maintenanceBusy, setMaintenanceBusy] = useState<MaintenanceAction | null>(null);
   const [formData, setFormData] = useState({
     videoFormat: '',
     sampleRate: '',
@@ -54,6 +58,38 @@ export default function ConfigTab({
       });
     }
   }, [serverConfig]);
+
+  // Generic POST to /api/xeebra-config/servers/{id}/configuration/_<action>.
+  // Mirrors what the source XR-Neo Xeebra Configuration page does for its
+  // Maintenance row buttons. Each action is destructive in its own way
+  // (clear disk wipes recorded media, clear configuration drops the
+  // server config, restart playouts interrupts output) so each prompts.
+  const handleMaintenance = async (
+    action: MaintenanceAction,
+    label: string,
+    confirmMsg: string,
+  ) => {
+    if (!server?.id || isDemo) return;
+    if (!window.confirm(confirmMsg)) return;
+    setMaintenanceBusy(action);
+    try {
+      await fetch('/api/proxy', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ip: apiServerIp,
+          path: `/api/xeebra-config/servers/${server.id}/configuration/_${action}`,
+        }),
+      });
+      onRefresh();
+    } catch (e) {
+      // Surface to the operator — the source UI shows a banner; we use
+      // a simple alert until we add a toast layer here.
+      alert(`${label} failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setMaintenanceBusy(null);
+    }
+  };
 
   const handleStartStop = async () => {
     if (!server?.id) return;
@@ -153,102 +189,176 @@ export default function ConfigTab({
     <div className="overflow-y-auto">
       {/* Server + Maintenance row */}
       <div className="grid grid-cols-2 gap-px bg-evs-gray">
-        {/* Server info */}
+        {/* Server info — layout mirrors the source XR-Neo Xeebra
+            Configuration page: IP large on top, then "<host> - <hw>
+            v<ver>", then "Configuration running/stopped" colour-coded,
+            then NTP / connected applications / playout controller. Big
+            square Start/Stop button on the right. */}
         <div className="p-4 bg-evs-gray-darker">
           <h2 className="text-xs font-semibold tracking-widest text-evs-gray-lighter uppercase mb-3">Server</h2>
-          <div className="bg-evs-gray-dark rounded-xs border border-evs-gray p-3 flex gap-4">
-            <div className="flex-1 space-y-1">
-              <div className="font-medium text-evs-contrast">{characteristics?.serverName}</div>
-              <div className="text-sm text-evs-gray-lighter">{serverConfig.ip} · v{characteristics?.version}</div>
+          <div className="bg-evs-gray-dark rounded-xs border border-evs-gray p-4 flex gap-4 items-stretch">
+            <div className="flex-1 space-y-1 min-w-0">
+              <div className="text-base font-mono text-evs-contrast">{serverConfig.ip}</div>
+              <div className="text-sm text-evs-contrast/85">
+                {characteristics?.serverName}
+                {characteristics?.hardwareType ? ` - ${characteristics.hardwareType}` : ''}
+                {characteristics?.version ? ` v${characteristics.version}` : ''}
+              </div>
               <div className={`text-sm font-medium ${isRunning ? 'text-evs-success' : 'text-evs-warning'}`}>
-                {serverConfig.status}
+                {isRunning ? 'Configuration running' : `Configuration ${(serverConfig.status ?? 'stopped').toLowerCase()}`}
               </div>
               {serverConfig.ntpInfo && (
                 <div className="text-xs text-evs-gray-lighter">
-                  NTP:{' '}
-                  {serverConfig.ntpInfo.ntpType === 'SERVER'
-                    ? 'Leader'
+                  NTP {serverConfig.ntpInfo.ntpType === 'SERVER'
+                    ? 'leader'
                     : serverConfig.ntpInfo.ntpType === 'CLIENT'
-                      ? `Follower · ${serverConfig.ntpInfo.ntpStatus}`
-                      : 'Disabled'}
+                      ? `follower · ${serverConfig.ntpInfo.ntpStatus}`
+                      : 'disabled'}
                 </div>
               )}
-              {connectedClients.length > 0 && (
-                <div className="text-xs text-evs-gray-lighter">
-                  Clients: {connectedClients.join(', ')}
-                </div>
+              <div className="text-xs text-evs-gray-lighter truncate">
+                Connected applications: {connectedClients.length > 0 ? connectedClients.join(', ') : '—'}
+              </div>
+              <div className="text-xs text-evs-gray-lighter truncate">
+                Playout controller: {serverConfig.playoutController || '—'}
+              </div>
+            </div>
+            {/* Big square Start/Stop button — primary-blue, hollow icon
+                + "Start"/"Stop" text label underneath. Same colour in
+                both states; the icon + label communicate the action. */}
+            <button
+              onClick={handleStartStop}
+              disabled={isStartStopLoading || isDemo}
+              title={isDemo ? 'Not available in preview mode' : isRunning ? 'Stop configuration' : 'Start configuration'}
+              className="shrink-0 self-center w-20 h-20 rounded-xs flex flex-col items-center justify-center gap-1 transition-colors disabled:opacity-40 bg-evs-primary/15 text-evs-primary hover:bg-evs-primary/25"
+            >
+              {isStartStopLoading ? (
+                <span className="text-2xl leading-none">…</span>
+              ) : isRunning ? (
+                <>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="6" y="6" width="12" height="12" rx="1" />
+                  </svg>
+                  <span className="text-[11px] font-medium leading-none">Stop</span>
+                </>
+              ) : (
+                <>
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                  <span className="text-[11px] font-medium leading-none">Start</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Maintenance — mirrors the source XR-Neo Xeebra Configuration page:
+            Clear disk, Clear configuration, Restart playouts, Services
+            Management Tool. Restart/Shutdown Machine are kept here too
+            because xeebra-ctrl is the only place an operator can do
+            those without SSHing in. Maintenance actions can't be run
+            while a Modify session is open — the source UI has the same
+            restriction. */}
+        <div className="p-4 bg-evs-gray-darker">
+          <h2 className="text-xs font-semibold tracking-widest text-evs-gray-lighter uppercase mb-3">Maintenance</h2>
+          <div className="bg-evs-gray-dark rounded-xs border border-evs-gray p-3 space-y-2">
+            {/* Standard maintenance actions — same set as the source UI. */}
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={() => handleMaintenance(
+                  'clearDisk',
+                  'Clear disk',
+                  'Clear disk: protected events and recorded data will be erased. Current configuration is kept but no more data will be available. Continue?',
+                )}
+                disabled={isDemo || isModifyMode || maintenanceBusy !== null}
+                title={isModifyMode ? 'Apply configuration first, or cancel your modification' : isDemo ? 'Not available in preview mode' : undefined}
+                className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors disabled:opacity-40"
+              >
+                {maintenanceBusy === 'clearDisk' ? 'Clearing disk…' : 'Clear disk'}
+              </button>
+              <button
+                onClick={() => handleMaintenance(
+                  'clearConfiguration',
+                  'Clear configuration',
+                  'Clear configuration: server configuration will be removed. Recordings stay intact. Continue?',
+                )}
+                disabled={isDemo || isModifyMode || maintenanceBusy !== null}
+                title={isModifyMode ? 'Apply configuration first, or cancel your modification' : isDemo ? 'Not available in preview mode' : undefined}
+                className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors disabled:opacity-40"
+              >
+                {maintenanceBusy === 'clearConfiguration' ? 'Clearing config…' : 'Clear configuration'}
+              </button>
+              <button
+                onClick={() => handleMaintenance(
+                  'restartPlayouts',
+                  'Restart playouts',
+                  'Restart playouts: outputs will be unavailable for a few seconds. Continue?',
+                )}
+                disabled={isDemo || isModifyMode || maintenanceBusy !== null}
+                title={isModifyMode ? 'Apply configuration first, or cancel your modification' : isDemo ? 'Not available in preview mode' : undefined}
+                className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors disabled:opacity-40"
+              >
+                {maintenanceBusy === 'restartPlayouts' ? 'Restarting playouts…' : 'Restart playouts'}
+              </button>
+              {!isDemo && (
+                <a
+                  href={`http://${serverConfig.ip}/xrneo-maintenance`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors"
+                >
+                  Services Management Tool
+                </a>
               )}
             </div>
-            <div className="flex flex-col gap-2 items-end justify-center">
+            {/* Host-level actions — separated onto their own row so the
+                colour-coded destructive buttons don't visually crowd the
+                in-app maintenance row above. */}
+            <div className="flex flex-wrap gap-2">
               <button
-                onClick={handleStartStop}
-                disabled={isStartStopLoading || isDemo}
+                onClick={() => setRestartOpen(true)}
+                disabled={isDemo}
                 title={isDemo ? 'Not available in preview mode' : undefined}
-                className={`px-4 py-1.5 rounded-xs text-sm font-medium transition-colors disabled:opacity-40 ${
-                  isRunning
-                    ? 'bg-evs-warning/20 text-evs-warning hover:bg-evs-warning/30'
-                    : 'bg-evs-success/20 text-evs-success hover:bg-evs-success/30'
-                }`}
+                className="px-3 py-1.5 border border-evs-warning/60 text-evs-warning rounded-xs text-sm hover:bg-evs-warning hover:text-white transition-colors disabled:opacity-40"
               >
-                {isStartStopLoading ? '…' : isRunning ? 'Stop' : 'Start'}
+                Restart
+              </button>
+              <button
+                onClick={() => setShutdownOpen(true)}
+                disabled={isDemo}
+                title={isDemo ? 'Not available in preview mode' : undefined}
+                className="px-3 py-1.5 border border-evs-danger/60 text-evs-danger rounded-xs text-sm hover:bg-evs-danger hover:text-white transition-colors disabled:opacity-40"
+              >
+                Shutdown
               </button>
             </div>
           </div>
         </div>
-
-        {/* Maintenance */}
-        <div className="p-4 bg-evs-gray-darker">
-          <h2 className="text-xs font-semibold tracking-widest text-evs-gray-lighter uppercase mb-3">Maintenance</h2>
-          <div className="bg-evs-gray-dark rounded-xs border border-evs-gray p-3 flex flex-wrap gap-2">
-            {!isDemo && (
-              <a
-                href={`http://${serverConfig.ip}:9081/`}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-3 py-1.5 border border-evs-gray rounded-xs text-sm hover:border-evs-primary transition-colors"
-              >
-                Services Management
-              </a>
-            )}
-            <button
-              onClick={() => setRestartOpen(true)}
-              disabled={isDemo}
-              title={isDemo ? 'Not available in preview mode' : undefined}
-              className="px-3 py-1.5 border border-evs-warning/60 text-evs-warning rounded-xs text-sm hover:bg-evs-warning hover:text-white transition-colors disabled:opacity-40"
-            >
-              Restart Machine
-            </button>
-            <button
-              onClick={() => setShutdownOpen(true)}
-              disabled={isDemo}
-              title={isDemo ? 'Not available in preview mode' : undefined}
-              className="px-3 py-1.5 border border-evs-danger/60 text-evs-danger rounded-xs text-sm hover:bg-evs-danger hover:text-white transition-colors disabled:opacity-40"
-            >
-              Shutdown Machine
-            </button>
-          </div>
-        </div>
       </div>
 
-      {/* Configuration */}
+      {/* Configuration — section layout mirrors the source XR-Neo Xeebra
+          Configuration page: Common configuration / Recorders configuration
+          (with per-recorder table) / Playouts configuration. Modify button
+          sits at the bottom and gates editing of every field above. */}
       <div className="p-4">
         <h2 className="text-xs font-semibold tracking-widest text-evs-gray-lighter uppercase mb-3">Configuration</h2>
-        <div className="bg-evs-gray-dark rounded-xs border border-evs-gray p-4 space-y-5">
-          {/* Common */}
+        <div className="bg-evs-gray-dark rounded-xs border border-evs-gray p-4 space-y-6">
+          {/* Common configuration */}
           <div>
-            <h3 className="text-sm font-medium text-evs-contrast mb-3">Common</h3>
+            <h3 className="text-sm font-medium text-evs-contrast mb-3">Common configuration</h3>
             <div className="grid grid-cols-3 gap-4">
-              <Field label="Video Format">
+              <Field label="Video format *">
                 <Select value={formData.videoFormat} disabled={fieldsDisabled}
                   onChange={v => setFormData(p => ({ ...p, videoFormat: v }))}
                   options={['1080i', '1080p', '720p', '4K']} />
               </Field>
-              <Field label="Sample Rate">
+              <Field label="Sample rate *">
                 <Select value={formData.sampleRate} disabled={fieldsDisabled}
                   onChange={v => setFormData(p => ({ ...p, sampleRate: v }))}
                   options={['25', '50', '29.97', '59.94']} />
               </Field>
-              <Field label="HDR Profile">
+              <Field label="HDR profile *">
                 <Select value={formData.hdrProfile} disabled={fieldsDisabled}
                   onChange={v => setFormData(p => ({ ...p, hdrProfile: v }))}
                   options={['SDR', 'HDR10', 'HLG']} />
@@ -256,25 +366,116 @@ export default function ConfigTab({
             </div>
           </div>
 
-          {/* Recorders */}
+          {/* Recorders configuration — header row + per-recorder list. */}
           <div>
-            <h3 className="text-sm font-medium text-evs-contrast mb-3">Recorders</h3>
-            <div className="grid grid-cols-3 gap-4">
-              <Field label="Inputs">
-                <input
-                  type="number" value={formData.numberOfInputs} disabled={fieldsDisabled}
-                  onChange={e => setFormData(p => ({ ...p, numberOfInputs: e.target.value }))}
-                  className="w-full bg-evs-gray-darker border border-evs-gray rounded-xs px-3 py-1.5 text-sm text-evs-contrast disabled:opacity-50 focus:outline-none focus:border-evs-primary" />
+            <h3 className="text-sm font-medium text-evs-contrast mb-3">Recorders configuration</h3>
+            <div className="grid grid-cols-3 gap-4 mb-4">
+              <Field label="Number of inputs *">
+                <NumberStepper
+                  value={Number(formData.numberOfInputs) || 0}
+                  disabled={fieldsDisabled}
+                  onChange={n => setFormData(p => ({ ...p, numberOfInputs: String(n) }))}
+                />
               </Field>
-              <Field label="Transport">
+              <Field label="Transport *">
                 <Select value={formData.transport} disabled={fieldsDisabled}
                   onChange={v => setFormData(p => ({ ...p, transport: v }))}
                   options={['SDI', 'IP', 'SRT', 'NDI']} />
               </Field>
-              <Field label="Audio Channels">
+              <Field label="Audio channels *">
                 <Select value={formData.audioChannels} disabled={fieldsDisabled}
                   onChange={v => setFormData(p => ({ ...p, audioChannels: v }))}
                   options={['2', '4', '8', '16']} />
+              </Field>
+            </div>
+            {/* Per-recorder list with name / SLSM / SDI port — same shape
+                as the source UI's recorders table. Rendered read-only
+                here; row editing comes in a later pass. */}
+            {serverConfig.recordersConfiguration?.recordersList && serverConfig.recordersConfiguration.recordersList.length > 0 && (
+              <div>
+                {/* Column header row, aligned with the per-row form
+                    fields below. Asterisks match the source's required-
+                    field convention. */}
+                <div className="grid grid-cols-[1fr_7rem_9rem_2rem] gap-2 px-1 mb-1.5 text-xs text-evs-gray-lighter">
+                  <div>SDI Recorder name *</div>
+                  <div>SLSM *</div>
+                  <div>SDI port *</div>
+                  <div />
+                </div>
+                {/* Each recorder row is its own form-styled rectangle,
+                    matching the source XR-Neo layout — name as a text
+                    input on the left, narrow SLSM dropdown, narrow SDI
+                    port dropdown, edit pencil tucked inline at the row
+                    end. Read-only outside Modify (no row-edit modal
+                    wired yet — pencil opens it once it exists). */}
+                <div className="space-y-1.5">
+                  {serverConfig.recordersConfiguration.recordersList.map((r, i) => {
+                    const bp = r.recorderSdiConfiguration?.boardPorts?.[0];
+                    const portLabel = bp ? `SDI port I${(bp.port ?? 0) + 1}` : '';
+                    return (
+                      <div key={i} className="grid grid-cols-[1fr_7rem_9rem_2rem] gap-2 items-center">
+                        <input
+                          type="text"
+                          value={r.recorderName ?? ''}
+                          readOnly
+                          disabled={fieldsDisabled}
+                          className="w-full bg-evs-gray-darker border border-evs-gray rounded-xs px-3 py-1.5 text-sm text-evs-contrast disabled:opacity-50 focus:outline-none focus:border-evs-primary"
+                        />
+                        {/* Source UI displays NO_SLSM as just "NO". The
+                            underlying enum stays NO_SLSM in the API
+                            request when row editing lands later. */}
+                        <Select
+                          value={r.slsmType === 'NO_SLSM' ? 'NO' : r.slsmType ?? 'NO'}
+                          disabled={fieldsDisabled}
+                          onChange={() => {}}
+                          options={['NO', 'SLSM_3X', 'SLSM_6X']}
+                        />
+                        <Select
+                          value={portLabel}
+                          disabled={fieldsDisabled}
+                          onChange={() => {}}
+                          options={[portLabel].filter(Boolean)}
+                        />
+                        <button
+                          type="button"
+                          disabled={fieldsDisabled}
+                          title={fieldsDisabled ? 'Click Modify to edit recorder rows' : `Edit ${r.recorderName}`}
+                          className="w-8 h-8 flex items-center justify-center rounded-xs border border-evs-gray text-evs-gray-lighter hover:text-evs-contrast hover:border-evs-primary transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                          </svg>
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Playouts configuration — separate section in the source UI.
+              On an SDI-only deployment (most current Xeebras) this is
+              empty / zero outputs, but keep the section visible so the
+              field shape matches the source. */}
+          <div>
+            <h3 className="text-sm font-medium text-evs-contrast mb-3">Playouts configuration</h3>
+            <div className="grid grid-cols-3 gap-4">
+              <Field label="Number of outputs *">
+                <NumberStepper
+                  value={serverConfig.playoutsConfiguration?.playoutsList?.length ?? 0}
+                  disabled
+                  onChange={() => {}}
+                />
+              </Field>
+              <Field label="Transport *">
+                <Select
+                  value={serverConfig.playoutsConfiguration?.transport ?? 'SDI'}
+                  disabled
+                  onChange={() => {}}
+                  options={['SDI', 'IP', 'SRT', 'NDI']}
+                />
               </Field>
             </div>
           </div>
@@ -286,8 +487,9 @@ export default function ConfigTab({
             </p>
           )}
 
-          {/* Actions */}
-          <div className="flex justify-end gap-3 pt-1 border-t border-evs-gray">
+          {/* Actions — bottom-left aligned to match the source UI's
+              Modify / Cancel / Save row position. */}
+          <div className="flex justify-start gap-3 pt-1 border-t border-evs-gray">
             {!isModifyMode ? (
               <button
                 onClick={() => setIsModifyMode(true)}
@@ -317,36 +519,6 @@ export default function ConfigTab({
           </div>
         </div>
       </div>
-
-      {/* Recorders list */}
-      {serverConfig.recordersConfiguration?.recordersList && serverConfig.recordersConfiguration.recordersList.length > 0 && (
-        <div className="px-4 pb-4">
-          <h2 className="text-xs font-semibold tracking-widest text-evs-gray-lighter uppercase mb-3">Recorder Inputs</h2>
-          <div className="bg-evs-gray-dark rounded-xs border border-evs-gray overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-evs-gray text-xs text-evs-gray-lighter">
-                  <th className="text-left px-4 py-2 font-medium">Name</th>
-                  <th className="text-left px-4 py-2 font-medium">Board</th>
-                  <th className="text-left px-4 py-2 font-medium">Port</th>
-                </tr>
-              </thead>
-              <tbody>
-                {serverConfig.recordersConfiguration.recordersList.map((r, i) => {
-                  const bp = r.recorderSdiConfiguration?.boardPorts?.[0];
-                  return (
-                    <tr key={i} className="border-b border-evs-gray/50 last:border-0 hover:bg-evs-gray/30 transition-colors">
-                      <td className="px-4 py-2 text-evs-contrast">{r.recorderName}</td>
-                      <td className="px-4 py-2 text-evs-gray-lighter">{bp?.board ?? '—'}</td>
-                      <td className="px-4 py-2 text-evs-gray-lighter">{bp?.port ?? '—'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {server && !isDemo && (
         <ShutdownModal
@@ -416,5 +588,29 @@ function Select({ value, options, disabled, onChange }: {
     >
       {options.map(o => <option key={o} value={o}>{o}</option>)}
     </select>
+  );
+}
+
+// NumberStepper: −/+ buttons either side of a centred read-only display.
+// Mirrors the source UI's "Number of inputs / outputs" control. Clamps at
+// 0 — the source caps at the licence-allowed maximum but we don't have
+// that figure here so leave the upper bound open.
+function NumberStepper({ value, disabled, onChange }: {
+  value: number; disabled: boolean; onChange: (n: number) => void;
+}) {
+  const dec = () => { if (!disabled) onChange(Math.max(0, value - 1)); };
+  const inc = () => { if (!disabled) onChange(value + 1); };
+  return (
+    <div className="flex items-stretch border border-evs-gray rounded-xs overflow-hidden bg-evs-gray-darker">
+      <button
+        type="button" onClick={dec} disabled={disabled || value <= 0}
+        className="px-3 text-evs-contrast hover:bg-evs-gray disabled:opacity-30 disabled:cursor-not-allowed"
+      >−</button>
+      <div className="flex-1 text-center px-2 py-1.5 text-sm text-evs-contrast tabular-nums">{value}</div>
+      <button
+        type="button" onClick={inc} disabled={disabled}
+        className="px-3 text-evs-contrast hover:bg-evs-gray disabled:opacity-30 disabled:cursor-not-allowed"
+      >+</button>
+    </div>
   );
 }
