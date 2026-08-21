@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Prepare Release
+
+# Opens a release/vX.Y.Z -> main pull request with versions bumped.
+#
+# Merging that PR fires Auto Tag Release, which creates the tag; the tag then
+# triggers CI to build the Windows installer and publish the GitHub Release.
+#
+# Version bumps target named locations explicitly. Do NOT replace this with a
+# repo-wide `grep -l "$PREV" | xargs sed -i` sweep — an unanchored substitution
+# of a bare version string will also rewrite unrelated matches (a dependency
+# pinned at the same number, a schema version), silently corrupting them.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. v0.3.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  prepare-release:
+    name: Prepare release
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    env:
+      VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          token: ${{ secrets.GH_PAT }}
+          ref: dev
+          fetch-depth: 0
+
+      - name: Validate version
+        run: |
+          if [[ ! "$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$ ]]; then
+            echo "::error::Invalid version format: $VERSION (expected vX.Y.Z)"
+            exit 1
+          fi
+
+          if git rev-parse -q --verify "refs/tags/$VERSION" >/dev/null; then
+            echo "::error::Tag $VERSION already exists"
+            exit 1
+          fi
+
+          if git ls-remote --exit-code --heads origin "release/$VERSION" >/dev/null 2>&1; then
+            echo "::error::Branch release/$VERSION already exists"
+            exit 1
+          fi
+
+      - name: Bump versions
+        run: |
+          VERSION_NUMBER="${VERSION#v}"
+
+          # frontend/package.json — anchored to the top-level "version" key.
+          # jq would be semantically safer but reformats the whole file, turning a
+          # one-line release diff into unrelated churn.
+          sed -i -E "s/^(  \"version\": )\"[^\"]*\"/\1\"$VERSION_NUMBER\"/" frontend/package.json
+          jq empty frontend/package.json  # fail loudly if the edit broke the JSON
+
+          # Inno Setup fallback — anchored to the #define, not the bare number.
+          # CI overrides this from the tag; the default matters for local builds.
+          sed -i -E "s/^(  #define MyAppVersion )\"[^\"]*\"/\1\"$VERSION_NUMBER\"/" \
+            installer/windows/xeebra-ctrl.iss
+
+          echo "Bumped to $VERSION_NUMBER:"
+          git --no-pager diff --stat
+
+          if git diff --quiet; then
+            echo "::error::No version changes produced — check the bump targets still match"
+            exit 1
+          fi
+
+      - name: Verify the bumped tree still builds
+        run: |
+          corepack enable pnpm
+          cd frontend
+          pnpm install --frozen-lockfile
+          pnpm build
+
+      - name: Open release pull request
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout -b "release/${VERSION}"
+          git add frontend/package.json installer/windows/xeebra-ctrl.iss
+          git commit -m "chore(release): ${VERSION}"
+          git push origin "release/${VERSION}"
+
+          gh pr create \
+            --title "chore(release): ${VERSION}" \
+            --head "release/${VERSION}" \
+            --base main \
+            --body "Automated version bump for ${VERSION}.
+
+          **Merge with a merge commit, not squash.** Auto Tag Release matches either
+          \`chore(release): ${VERSION}\` exactly, or \`from <org>/release/${VERSION}\` in a
+          merge commit. Squashing rewrites the message to
+          \`chore(release): ${VERSION} (#N)\`, which matches neither — the tag is then
+          silently skipped and no release is published."
