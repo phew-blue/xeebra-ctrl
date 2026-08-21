@@ -7,7 +7,7 @@ on:
 jobs:
   auto-tag:
     name: Auto Tag
-    runs-on: home-ops
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: write
     steps:
