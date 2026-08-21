@@ -15,7 +15,7 @@ env:
 jobs:
   build:
     name: Build & push
-    runs-on: home-ops
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     permissions:
       contents: read
       packages: write
@@ -52,7 +52,7 @@ jobs:
 
   installer:
     name: Build dev installer
-    runs-on: windows-latest
+    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
     permissions:
       contents: read
     steps:
@@ -96,7 +96,7 @@ jobs:
   deploy:
     name: Update home-ops digest
     needs: build
-    runs-on: home-ops
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     steps:
       - name: Commit digest to home-ops
         env:
