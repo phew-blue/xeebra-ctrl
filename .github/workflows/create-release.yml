@@ -1,0 +1,107 @@
+# yaml-language-server: $schema=https://json.schemastore.org/github-workflow.json
+name: Create GitHub Release
+
+# Publishes the GitHub Release for a tag, with notes grouped by change type.
+#
+# CI (ci.yml) attaches the Windows installer to the same release via
+# softprops/action-gh-release with allowUpdates semantics, so the two jobs are
+# order-independent: whichever finishes first creates the release, the other
+# updates it.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  create-release:
+    name: Create release
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+
+      - name: Extract version info
+        id: version
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if [[ "$VERSION" =~ (alpha|beta|rc|dev) ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Generate release notes
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 "${VERSION}^" 2>/dev/null || echo "")
+          if [[ -n "$PREV_TAG" ]]; then
+            RANGE="${PREV_TAG}..${VERSION}"
+          else
+            RANGE="$VERSION"
+          fi
+
+          # Subjects only, no merges, no the release chore commit itself.
+          git log --no-merges --pretty=format:'%s' "$RANGE" \
+            | grep -v '^chore(release):' > /tmp/subjects.txt || true
+
+          # Dependency and tooling churn is summarised as a count rather than
+          # listed. Renovate opens one commit per bump; left unfiltered it buries
+          # the changes a reader actually cares about.
+          NOISE='^(feat|fix|chore|ci)\((deps|deps-dev|npm|mise|container|github-action|renovate)\)'
+          DEP_COUNT=$(grep -cE "$NOISE" /tmp/subjects.txt || true)
+          grep -vE "$NOISE" /tmp/subjects.txt > /tmp/real.txt || true
+
+          section() {   # $1 = heading, $2 = type regex
+            local body
+            body=$(grep -E "^$2(\(.+\))?!?: " /tmp/real.txt \
+                   | sed -E "s/^$2(\(([^)]+)\))?!?: /- /" || true)
+            if [[ -n "$body" ]]; then
+              printf '### %s\n\n%s\n\n' "$1" "$body" >> notes.md
+            fi
+          }
+
+          : > notes.md
+          if [[ -n "$PREV_TAG" ]]; then
+            printf '## Changes since %s\n\n' "$PREV_TAG" >> notes.md
+          else
+            printf '## Initial release\n\n' >> notes.md
+          fi
+
+          section 'Features' 'feat'
+          section 'Fixes' 'fix'
+          section 'Improvements' '(perf|refactor)'
+          section 'Documentation' 'docs'
+
+          if [[ "$DEP_COUNT" -gt 0 ]]; then
+            if [[ "$DEP_COUNT" -eq 1 ]]; then NOUN="update"; else NOUN="updates"; fi
+            printf '### Maintenance\n\n- %s dependency and tooling %s\n\n' "$DEP_COUNT" "$NOUN" >> notes.md
+          fi
+
+          # A release with no categorised commits still needs a body.
+          if [[ ! -s notes.md ]] || ! grep -q '^- ' notes.md; then
+            printf 'No user-facing changes recorded for this release.\n\n' >> notes.md
+          fi
+
+          printf -- '---\n\n**Install (Windows):** download `xeebra-ctrl-setup-%s.exe` below.\n' \
+            "${VERSION#v}" >> notes.md
+
+          echo "--- generated notes ---"
+          cat notes.md
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@339a81892b84b4eeb0f6e744e4574d79d0d9b8dd # v1
+        with:
+          name: xeebra-ctrl ${{ steps.version.outputs.version }}
+          bodyFile: notes.md
+          draft: false
+          prerelease: ${{ steps.version.outputs.prerelease }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+          allowUpdates: true
+          omitBodyDuringUpdate: false
+          updateOnlyUnreleased: false
