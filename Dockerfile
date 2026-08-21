@@ -3,10 +3,15 @@ FROM node:24-alpine AS build
 
 WORKDIR /app
 
-RUN npm install -g pnpm
+# corepack honours the "packageManager" pin in frontend/package.json.
+# `npm install -g pnpm` does not, and silently drifted to pnpm 11 against a
+# lockfile written by 10.33.0.
+ENV PNPM_HOME="/pnpm"
+ENV PATH="$PNPM_HOME:$PATH"
+RUN corepack enable pnpm
 
-COPY frontend/package.json frontend/pnpm-lock.yaml* ./
-RUN pnpm install --frozen-lockfile 2>/dev/null || pnpm install
+COPY frontend/package.json frontend/pnpm-lock.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY frontend/ .
 RUN pnpm build
