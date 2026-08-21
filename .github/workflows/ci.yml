@@ -16,7 +16,7 @@ jobs:
   # ──────────────────────────────────────────────────────────────────
   check-types:
     name: Type check
-    runs-on: home-ops
+    runs-on: ${{ vars.RUNNER || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
 
@@ -40,12 +40,13 @@ jobs:
   # ──────────────────────────────────────────────────────────────────
   # Full build — frontend + Go binary + (on tags) Inno Setup installer
   # Runs on Windows so CGO syscall dependencies compile natively.
-  # Self-hosted pool (DT-02) — choco + Inno Setup are pre-installed on the host.
+  # GitHub-hosted windows-latest by default; set the WINDOWS_RUNNER variable to
+  # target a self-hosted pool (e.g. DT-02). Inno Setup is installed via choco below.
   # ──────────────────────────────────────────────────────────────────
   build:
     name: Build
     needs: check-types
-    runs-on: home-ops-windows
+    runs-on: ${{ vars.WINDOWS_RUNNER || 'windows-latest' }}
     permissions:
       contents: write
     steps:
