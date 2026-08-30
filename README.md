@@ -12,13 +12,23 @@ It ships as one Windows `.exe` with a system tray icon. A Go HTTP server
 (default port `3200`) serves an embedded React SPA, so there is nothing else to
 install and no separate web server to keep running.
 
+![Two units side by side, each showing its grid of live SDI sources](docs/preview.webp)
+
 ## Install
 
 Download the installer from the
 [latest release](https://github.com/phew-blue/xeebra-ctrl/releases/latest) and
-run it.
+run it. It is a per-user install — no admin prompt.
 
-Configuration lives in `xeebra-ctrl.config.json` next to the exe. See
+It updates itself: five minutes after logon and daily thereafter it checks the
+latest release and installs it silently if there is a newer one. **Check for
+updates** in the tray menu does the same on demand, as does
+`xeebra-ctrl.exe --check-update`. The downloaded installer is verified against
+the SHA256 in the published manifest before it is run.
+
+Configuration lives in `xeebra-ctrl.config.json` in the install directory,
+`%LOCALAPPDATA%\Phew Blue\Xeebra CTRL\`. Installs upgraded from v0.2.1 or
+earlier keep theirs beside the old exe, and that location is still read. See
 [`xeebra-ctrl.config.example.json`](xeebra-ctrl.config.example.json):
 
 ```json
@@ -46,6 +56,20 @@ SSH credentials default to `evs` / `evs123` when omitted.
 - **Group and server management** for venues running several units.
 - **Metrics tab**, and UI state that persists between sessions.
 - **Shutdown and restart** per server, with confirmation modals.
+
+Split view runs two units side by side or stacked, each with its own tab
+selection:
+
+![The same two units stacked, the grid reflowing to full width in each pane](docs/stacked.webp)
+
+The metrics tab shows service health per unit alongside SDI signal status:
+
+![Service health for twenty-one checks above a table of SDI signals](docs/metrics.webp)
+
+The configuration tab carries video format, sample rate, HDR profile and
+per-recorder SDI settings, plus the maintenance actions:
+
+![Server details and maintenance actions above per-recorder settings](docs/configuration.webp)
 
 ## How it reaches a unit
 
