@@ -33,15 +33,52 @@ type Group struct {
 	SSHPassword string `json:"sshPassword"`
 }
 
+const configName = "xeebra-ctrl.config.json"
+
 type server struct {
 	mu     sync.RWMutex
 	config Config
+	// configPath is where the config was read from, and where saves go back to.
+	// Resolved by loadConfig so an install still running off the pre-0.2.2
+	// location keeps using it rather than splitting across two files.
+	configPath string
 }
 
 func newServer() *server {
 	return &server{
-		config: Config{Port: 3200},
+		config: Config{Port: 3200, Groups: []Group{}},
 	}
+}
+
+// defaultConfigPath is %LOCALAPPDATA%\Phew Blue\Xeebra CTRL\ — the install
+// directory itself, since v0.2.2 installs per-user. See notes/windows-app-layout.md
+// for why the app lives somewhere it can write: silent self-update depends on it.
+func defaultConfigPath() string {
+	if dir := os.Getenv("LOCALAPPDATA"); dir != "" {
+		return filepath.Join(dir, "Phew Blue", "Xeebra CTRL", configName)
+	}
+	return legacyConfigPath()
+}
+
+// legacyConfigPath is beside the executable: where releases up to v0.2.1 kept the
+// file when installed machine-wide, and where a dev build still finds one.
+func legacyConfigPath() string {
+	return filepath.Join(exeDir(), configName)
+}
+
+// resolveConfigPath prefers the LocalAppData location but falls back to a config
+// left beside the executable by an older install or a dev run.
+func resolveConfigPath() string {
+	path := defaultConfigPath()
+	if _, err := os.Stat(path); err == nil {
+		return path
+	}
+	if legacy := legacyConfigPath(); legacy != path {
+		if _, err := os.Stat(legacy); err == nil {
+			return legacy
+		}
+	}
+	return path
 }
 
 func (s *server) saveConfig() error {
@@ -49,21 +86,34 @@ func (s *server) saveConfig() error {
 	if err != nil {
 		return fmt.Errorf("marshal config: %w", err)
 	}
-	path := filepath.Join(exeDir(), "xeebra-ctrl.config.json")
+	path := s.configPath
+	if path == "" {
+		path = defaultConfigPath()
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create config dir: %w", err)
+	}
 	return os.WriteFile(path, data, 0644) //nolint:gosec
 }
 
 func (s *server) loadConfig() error {
-	path := filepath.Join(exeDir(), "xeebra-ctrl.config.json")
+	path := resolveConfigPath()
+	s.configPath = path
 	data, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("cannot read xeebra-ctrl.config.json: %w", err)
+		return fmt.Errorf("cannot read %s: %w", path, err)
 	}
 	if err := json.Unmarshal(data, &s.config); err != nil {
 		return fmt.Errorf("invalid config JSON: %w", err)
 	}
 	if s.config.Port == 0 {
 		s.config.Port = 3200
+	}
+	// A config without a "groups" key unmarshals to a nil slice, which encodes
+	// as JSON null and breaks the frontend's group list. Keep it an empty slice
+	// so /api/config always answers with an array.
+	if s.config.Groups == nil {
+		s.config.Groups = []Group{}
 	}
 	// Apply credential defaults
 	for i := range s.config.Groups {
