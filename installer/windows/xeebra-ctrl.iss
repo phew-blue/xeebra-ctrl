@@ -6,7 +6,7 @@
 ;   2. make build          (builds frontend + Go binary)
 ;   3. iscc installer\windows\xeebra-ctrl.iss
 
-#define MyAppName      "xeebra-ctrl"
+#define MyAppName      "Xeebra CTRL"
 #ifndef MyAppVersion
   #define MyAppVersion "0.2.1"
 #endif
@@ -14,19 +14,36 @@
 #define MyAppExeName   "xeebra-ctrl.exe"
 
 [Setup]
+; Pinned to the value AppName used to derive before the display name changed to
+; "Xeebra CTRL". Keeps the xeebra-ctrl_is1 uninstall key, so later upgrades are
+; recognised as upgrades rather than installed alongside.
+AppId=xeebra-ctrl
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-DefaultDirName={autopf}\xeebra-ctrl
+; Per-user: nothing here needs elevation, and installing under LOCALAPPDATA lets
+; the running exe be replaced during self-update. See notes/windows-app-layout.md.
+PrivilegesRequired=lowest
+DefaultDirName={localappdata}\Phew Blue\{#MyAppName}
+DisableDirPage=yes
 DefaultGroupName={#MyAppName}
+; The binary is windows/amd64. Without this the installer runs in 32-bit mode
+; and {autopf}/{commonpf} resolve to the "(x86)" tree.
+ArchitecturesInstallIn64BitMode=x64compatible
 OutputDir=Output
 OutputBaseFilename=xeebra-ctrl-setup-{#MyAppVersion}
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
-PrivilegesRequired=admin
 UninstallDisplayName={#MyAppName}
 UninstallDisplayIcon={app}\{#MyAppExeName}
+; Self-update runs this installer while the tray process is alive, and Windows
+; will not overwrite a locked .exe. Deliberately no AppMutex: Inno checks it
+; before PrepareToInstall and can only answer with a message box, so under
+; /SUPPRESSMSGBOXES it defaults to Cancel and every silent upgrade becomes a
+; silent no-op. PrepareToInstall below does the job unattended instead.
+CloseApplications=force
+RestartApplications=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -34,29 +51,28 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 [Files]
 ; Main binary (Go, embeds the React frontend)
 Source: "..\..\xeebra-ctrl.exe"; DestDir: "{app}"; Flags: ignoreversion
-; PowerShell startup task helper
-Source: "install-startup.ps1"; DestDir: "{app}"; Flags: ignoreversion
+
+[Tasks]
+Name: "startup"; Description: "Run {#MyAppName} at logon (tray icon)"; GroupDescription: "Startup"
 
 [Icons]
-Name: "{group}\Open xeebra-ctrl"; Filename: "http://localhost:3200"; Comment: "Open xeebra-ctrl in browser"
-Name: "{group}\Uninstall xeebra-ctrl"; Filename: "{uninstallexe}"
+Name: "{group}\Open {#MyAppName}"; Filename: "http://localhost:3200"; Comment: "Open {#MyAppName} in browser"
+Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
+; Per-user startup entry. Replaces the elevated scheduled task used up to v0.2.1 —
+; a per-user install cannot register a task at RunLevel Highest.
+Name: "{userstartup}\Phew Blue {#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: startup
 
 [Run]
-; Register startup task
-Filename: "powershell.exe"; \
-  Parameters: "-ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\install-startup.ps1"" -InstallDir ""{app}"""; \
-  StatusMsg: "Registering startup task..."; \
-  Flags: waituntilterminated runhidden
-
-; Launch the app (starts tray + server)
+; Launch the app (starts tray + server). Deliberately NOT skipifsilent: a silent
+; self-update exits the running copy, so this is what brings it back.
 Filename: "{app}\{#MyAppExeName}"; \
   WorkingDir: "{app}"; \
-  StatusMsg: "Starting xeebra-ctrl..."; \
-  Flags: nowait postinstall skipifsilent
+  StatusMsg: "Starting {#MyAppName}..."; \
+  Flags: nowait postinstall runhidden
 
 ; Open in browser
 Filename: "http://localhost:3200"; \
-  Description: "Open xeebra-ctrl in browser"; \
+  Description: "Open {#MyAppName} in browser"; \
   Flags: postinstall shellexec skipifsilent unchecked
 
 [UninstallRun]
@@ -65,24 +81,62 @@ Filename: "taskkill.exe"; \
   Parameters: "/IM xeebra-ctrl.exe /F"; \
   Flags: runhidden
 
-; Remove startup task
-Filename: "powershell.exe"; \
-  Parameters: "-ExecutionPolicy Bypass -WindowStyle Hidden -Command ""schtasks /Delete /TN 'xeebra-ctrl' /F"""; \
-  Flags: runhidden
-
 [UninstallDelete]
-Type: files; Name: "{app}\xeebra-ctrl.config.json"
+; Config is created at runtime / by [Code], so Inno does not track it.
+Type: files;      Name: "{app}\xeebra-ctrl.config.json"
+Type: dirifempty; Name: "{localappdata}\Phew Blue"
 
 [Code]
 var
   PortPage: TInputQueryWizardPage;
+
+{ A resident tray process holds our own .exe open. Restart Manager cannot reliably
+  close a tray app with no main window, and a silent install must never stop to
+  ask, so terminate any running copy before the file step. Failing to kill is not
+  fatal — returning '' means carry on. }
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  ResultCode: Integer;
+begin
+  Exec(ExpandConstant('{sys}\taskkill.exe'), '/IM xeebra-ctrl.exe /F', '',
+       SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  Result := '';
+end;
+
+{ Up to v0.2.1 this was a machine-wide install: PrivilegesRequired=admin, files in
+  Program Files (x86), uninstall entry in HKLM, and an elevated logon task. AppId
+  pins the key name but not the hive, so a per-user install would not recognise
+  that one and would leave it stranded with its task still running. Uninstall it
+  first. Best-effort: if the user declines the elevation prompt we carry on rather
+  than blocking a fresh install. }
+function InitializeSetup(): Boolean;
+var
+  OldUninstaller: String;
+  ResultCode: Integer;
+begin
+  Result := True;
+
+  if RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\xeebra-ctrl_is1',
+                         'UninstallString', OldUninstaller) then
+  begin
+    OldUninstaller := RemoveQuotes(OldUninstaller);
+    if FileExists(OldUninstaller) then
+      Exec(OldUninstaller, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '',
+           SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  end;
+
+  { The old install also registered a scheduled task. Its uninstaller removes it,
+    but drop it explicitly in case that install was already gone. }
+  Exec(ExpandConstant('{sys}\schtasks.exe'), '/Delete /TN "xeebra-ctrl" /F', '',
+       SW_HIDE, ewWaitUntilTerminated, ResultCode);
+end;
 
 procedure InitializeWizard;
 begin
   PortPage := CreateInputQueryPage(wpWelcome,
     'Port',
     'Web interface port',
-    'xeebra-ctrl runs a local web server. Choose a port that is not in use on this machine.');
+    '{#MyAppName} runs a local web server. Choose a port that is not in use on this machine.');
   PortPage.Add('Port (default 3200):', False);
   PortPage.Values[0] := '3200';
 end;
@@ -100,20 +154,27 @@ end;
 
 procedure WriteConfigFile;
 var
-  Dir, Port: String;
+  Path, Port: String;
   Content: String;
 begin
-  Dir  := ExpandConstant('{app}');
-  Port := Trim(PortPage.Values[0]);
+  Path := ExpandConstant('{app}') + '\xeebra-ctrl.config.json';
 
+  { Never clobber an existing config — an upgrade, including every silent
+    self-update, would otherwise wipe the configured groups. The port from the
+    wizard page only applies to a fresh install. }
+  if FileExists(Path) then
+    Exit;
+
+  Port := Trim(PortPage.Values[0]);
   if Port = '' then Port := '3200';
 
   Content :=
     '{' + #13#10 +
-    '  "port": ' + Port + #13#10 +
+    '  "port": ' + Port + ',' + #13#10 +
+    '  "groups": []' + #13#10 +
     '}' + #13#10;
 
-  SaveStringToFile(Dir + '\xeebra-ctrl.config.json', Content, False);
+  SaveStringToFile(Path, Content, False);
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);

@@ -19,7 +19,7 @@ xeebra-ctrl is a monitoring and control panel for EVS Xeebra video-referee serve
 - `frontend/src/` — `App.tsx`, `components/` (Sidebar, ServerView, Monitoring/Metrics/Config/Settings tabs, Shutdown/Restart modals, VideoCell), `hooks/useHealthAlerts.ts`
 - `installer/windows/` — Inno Setup script (`xeebra-ctrl.iss`) + startup PowerShell
 - `Dockerfile` + `nginx.conf` — frontend-only **preview mode** image: nginx serves the SPA, mocks `/api/config`, and returns 502 for all other `/api/*`
-- `xeebra-ctrl.config.example.json` — config shape; the real `xeebra-ctrl.config.json` lives next to the exe
+- `xeebra-ctrl.config.example.json` — config shape; the real `xeebra-ctrl.config.json` lives in `%ProgramData%\Phew Blue\Xeebra CTRL\` (installs upgraded from <= v0.2.1 keep theirs next to the exe, which is still read as a fallback)
 
 ## Build & Run
 
