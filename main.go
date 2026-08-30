@@ -29,10 +29,34 @@ type trayApp struct {
 	server     *server
 	statusItem *systray.MenuItem
 	openItem   *systray.MenuItem
+	updateItem *systray.MenuItem
 	quitItem   *systray.MenuItem
 }
 
+// updateCheckDelay is the wait after logon before the first update check —
+// long enough for the network to settle on a machine that just booted.
+const updateCheckDelay = 5 * time.Minute
+
+// updateCheckInterval is the cadence after that first check.
+const updateCheckInterval = 24 * time.Hour
+
 func main() {
+	// Run the update check and exit. Same code path the tray menu uses, but
+	// reachable without a desktop session — handy for scripted rollouts.
+	if len(os.Args) > 1 && os.Args[1] == "--check-update" {
+		if err := CheckAndUpdate(true); err != nil {
+			fmt.Fprintf(os.Stderr, "update check failed: %v\n", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	// --version prints the stamped build version and exits.
+	if len(os.Args) > 1 && os.Args[1] == "--version" {
+		fmt.Println(version)
+		return
+	}
+
 	// HEADLESS env var: run server only (for dev on non-Windows)
 	if os.Getenv("HEADLESS") == "1" {
 		srv := newServer()
@@ -67,6 +91,7 @@ func onReady() {
 	a := &trayApp{server: srv}
 	a.buildMenu()
 	go a.pollLoop()
+	go a.updateLoop()
 }
 
 func (a *trayApp) buildMenu() {
@@ -87,6 +112,10 @@ func (a *trayApp) buildMenu() {
 
 	systray.AddSeparator()
 
+	a.updateItem = systray.AddMenuItem("Check for updates", "")
+
+	systray.AddSeparator()
+
 	a.quitItem = systray.AddMenuItem("Quit", "")
 
 	go a.handleClicks()
@@ -97,10 +126,29 @@ func (a *trayApp) handleClicks() {
 		select {
 		case <-a.openItem.ClickedCh:
 			openURL(fmt.Sprintf("http://localhost:%d", a.server.config.Port))
+		case <-a.updateItem.ClickedCh:
+			go func() {
+				if err := CheckAndUpdate(true); err != nil {
+					fmt.Fprintf(os.Stderr, "update check failed: %v\n", err)
+				}
+			}()
 		case <-a.quitItem.ClickedCh:
 			systray.Quit()
 			return
 		}
+	}
+}
+
+// updateLoop keeps an unattended machine from drifting: check shortly after
+// logon, then once a day. CheckAndUpdate exits the process when it installs, so
+// this returns only while we are already up to date.
+func (a *trayApp) updateLoop() {
+	time.Sleep(updateCheckDelay)
+	for {
+		if err := CheckAndUpdate(false); err != nil {
+			fmt.Fprintf(os.Stderr, "update check failed: %v\n", err)
+		}
+		time.Sleep(updateCheckInterval)
 	}
 }
 

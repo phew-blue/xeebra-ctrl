@@ -52,10 +52,12 @@ export default function App() {
     fetch('/api/config')
       .then(r => r.json())
       .then((cfg: AppConfig) => {
-        setConfig(cfg);
-        if (cfg.groups.length > 0) setSelectedGroupIdx(0);
+        // Tolerate a config with no groups key: older servers answer with null.
+        const groups = cfg.groups ?? [];
+        setConfig({ ...cfg, groups });
+        if (groups.length > 0) setSelectedGroupIdx(0);
       })
-      .catch(() => setConfigError('Failed to load config'));
+      .catch(() => setConfigError('Cannot reach the xeebra-ctrl server'));
   }, []);
 
   const selectedGroup = config && selectedGroupIdx !== null ? config.groups[selectedGroupIdx] : null;
@@ -242,7 +244,7 @@ export default function App() {
   if (configError) {
     return (
       <div className="flex items-center justify-center h-screen bg-evs-gray-darker text-evs-danger">
-        {configError} — ensure xeebra-ctrl.config.json exists next to the executable.
+        {configError} — check that xeebra-ctrl is still running in the system tray.
       </div>
     );
   }
