@@ -48,7 +48,7 @@ ICO_SIZES = (16, 24, 32, 48, 256)
 APP_ICON_SIZE = 512
 
 MARK_BOX = (0.88, 0.92)   # mark within the tile, leaving room for the badge
-GLYPH_WIDTH = 0.70        # of the clear width at the centroid
+GLYPH_WIDTH = 0.57        # of the clear width at the centroid
 ROTATION = 35             # degrees anti-clockwise
 BADGE_RADIUS = 0.19       # large enough to read at 16px
 SS = 4                    # supersample factor
