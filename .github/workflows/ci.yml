@@ -113,15 +113,17 @@ jobs:
       - name: Build Go binary
         run: go build -ldflags="-s -w -H windowsgui -X main.version=${{ steps.version.outputs.stamp }}" -o xeebra-ctrl.exe .
 
-      # ── Tag-only steps below ────────────────────────────────────────
+      # ── Installer: compiled on every ref, published on tags only ────
 
+      # The .iss carries Pascal Script whose errors only surface at compile
+      # time. Two such defects shipped in v0.3.0 while this ran tag-only.
       - name: Install Inno Setup
-        if: startsWith(github.ref, 'refs/tags/v')
         run: choco install innosetup --no-progress -y
 
       - name: Build installer
-        if: startsWith(github.ref, 'refs/tags/v')
         run: iscc "/DMyAppVersion=${{ steps.version.outputs.version }}" installer\windows\xeebra-ctrl.iss
+
+      # ── Tag-only steps below ────────────────────────────────────────
 
       # The tray's self-update reads this from the latest release. It advertises
       # the setup asset with its SHA256; an installer that fails verification is
