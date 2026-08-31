@@ -51,6 +51,8 @@ MARK_BOX = (0.88, 0.92)   # mark within the tile, leaving room for the badge
 GLYPH_WIDTH = 0.57        # of the clear width at the centroid
 ROTATION = 35             # degrees anti-clockwise
 BADGE_RADIUS = 0.19       # large enough to read at 16px
+BADGE_MARGIN = 0.02       # keeps the extreme corner clear, so the icon reads as a
+                          # mark rather than a square tile
 SS = 4                    # supersample factor
 
 
@@ -223,8 +225,8 @@ def icon(size, glyph_colour, badge=None):
     g = g.rotate(ROTATION, resample=Image.BICUBIC, expand=True)
     im.alpha_composite(g, (int(n*CX - g.width/2), int(n*CY - g.height/2)))
     if badge:
-        r = n * BADGE_RADIUS
-        ImageDraw.Draw(im).ellipse([n-2*r, n-2*r, n, n], fill=badge)
+        r, m = n * BADGE_RADIUS, n * BADGE_MARGIN
+        ImageDraw.Draw(im).ellipse([n-m-2*r, n-m-2*r, n-m, n-m], fill=badge)
     return im.resize((size, size), Image.LANCZOS)
 
 
