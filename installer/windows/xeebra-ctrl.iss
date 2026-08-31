@@ -8,7 +8,7 @@
 
 #define MyAppName      "Xeebra CTRL"
 #ifndef MyAppVersion
-  #define MyAppVersion "0.3.1"
+  #define MyAppVersion "0.3.2"
 #endif
 #define MyAppPublisher "Phew Blue"
 #define MyAppExeName   "xeebra-ctrl.exe"
@@ -56,7 +56,7 @@ Source: "..\..\xeebra-ctrl.exe"; DestDir: "{app}"; Flags: ignoreversion
 Name: "startup"; Description: "Run {#MyAppName} at logon (tray icon)"; GroupDescription: "Startup"
 
 [Icons]
-Name: "{group}\Open {#MyAppName}"; Filename: "http://localhost:3200"; Comment: "Open {#MyAppName} in browser"
+Name: "{group}\Open {#MyAppName}"; Filename: "{code:GetAppUrl}"; Comment: "Open {#MyAppName} in browser"
 Name: "{group}\Uninstall {#MyAppName}"; Filename: "{uninstallexe}"
 ; Per-user startup entry. Replaces the elevated scheduled task used up to v0.2.1 —
 ; a per-user install cannot register a task at RunLevel Highest.
@@ -71,7 +71,7 @@ Filename: "{app}\{#MyAppExeName}"; \
   Flags: nowait postinstall runhidden
 
 ; Open in browser
-Filename: "http://localhost:3200"; \
+Filename: "{code:GetAppUrl}"; \
   Description: "Open {#MyAppName} in browser"; \
   Flags: postinstall shellexec skipifsilent unchecked
 
@@ -124,6 +124,51 @@ end;
   and stranded the old copy. HKCU is never checked: that is where the current
   per-user install registers, and uninstalling it here would delete the very
   config we are about to migrate. Inno handles same-AppId upgrades itself. }
+{ The port actually configured for this install, read back out of the config, or
+  '' when there is none yet. Simple text scan rather than a JSON parser: the file
+  is written by this installer or by the app, both of which emit a plain
+  "port": <number> pair. }
+function InstalledPort(): String;
+var
+  Path: String;
+  S: AnsiString;
+  I: Integer;
+begin
+  Result := '';
+  Path := ExpandConstant('{app}') + '\xeebra-ctrl.config.json';
+  if not FileExists(Path) then
+    Exit;
+  if not LoadStringFromFile(Path, S) then
+    Exit;
+  I := Pos('"port"', S);
+  if I = 0 then
+    Exit;
+  I := I + 6;
+  while (I <= Length(S)) and ((S[I] < '0') or (S[I] > '9')) do
+    I := I + 1;
+  while (I <= Length(S)) and (S[I] >= '0') and (S[I] <= '9') do
+  begin
+    Result := Result + S[I];
+    I := I + 1;
+  end;
+end;
+
+{ Used by the Start-menu shortcut and the post-install browser link. Both used to
+  hardcode the default port, so an install on any other port shipped a shortcut
+  that opened nothing. An upgrade keeps serving on whatever its config says, and
+  a fresh install uses the port chosen on the wizard page. }
+function GetAppUrl(Param: String): String;
+var
+  Port: String;
+begin
+  Port := InstalledPort();
+  if (Port = '') and (PortPage <> nil) then
+    Port := Trim(PortPage.Values[0]);
+  if Port = '' then
+    Port := '7544';
+  Result := 'http://localhost:' + Port;
+end;
+
 function RemoveMachineWideInstall(RootKey: Integer): Boolean;
 var
   UninstallString, InstallLocation, OldConfig: String;
@@ -181,8 +226,8 @@ begin
     'Port',
     'Web interface port',
     '{#MyAppName} runs a local web server. Choose a port that is not in use on this machine.');
-  PortPage.Add('Port (default 3200):', False);
-  PortPage.Values[0] := '3200';
+  PortPage.Add('Port (default 7544):', False);
+  PortPage.Values[0] := '7544';
 end;
 
 function NextButtonClick(CurPageID: Integer): Boolean;
@@ -192,7 +237,7 @@ begin
   if CurPageID = PortPage.ID then
   begin
     if Trim(PortPage.Values[0]) = '' then
-      PortPage.Values[0] := '3200';
+      PortPage.Values[0] := '7544';
   end;
 end;
 
@@ -218,7 +263,7 @@ begin
   end;
 
   Port := Trim(PortPage.Values[0]);
-  if Port = '' then Port := '3200';
+  if Port = '' then Port := '7544';
 
   Content :=
     '{' + #13#10 +

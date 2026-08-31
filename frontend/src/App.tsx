@@ -264,10 +264,19 @@ export default function App() {
       <Toaster theme="dark" position="top-right" richColors closeButton />
       {/* ── Top nav ─────────────────────────────────────────────────────── */}
       <nav className="bg-evs-gray-dark shrink-0 h-14 flex items-center px-4 shadow border-b border-evs-gray z-50">
-        <div className="flex items-center gap-2.5 min-w-0">
+        {/* The brand lockup doubles as the way back to monitoring, which is what a
+            logo in a header is expected to do. Reachable by keyboard as a real
+            button rather than a click handler on a div. */}
+        <button
+          type="button"
+          onClick={() => setView('main')}
+          title="Back to monitoring"
+          aria-label="Back to monitoring"
+          className="flex items-center gap-2.5 min-w-0 rounded-xs transition-opacity hover:opacity-75 focus:outline-none focus-visible:ring-1 focus-visible:ring-evs-primary"
+        >
           <img src="/phew-blue-logo.svg" alt="" className="h-5 w-5 opacity-80" />
           <span className="text-evs-contrast font-semibold tracking-wide text-sm">Xeebra CTRL</span>
-        </div>
+        </button>
         {isDemo && (
           <span className="ml-4 text-xs bg-evs-warning/20 text-evs-warning px-2 py-0.5 rounded-xs">
             Preview mode

@@ -46,7 +46,7 @@ type server struct {
 
 func newServer() *server {
 	return &server{
-		config: Config{Port: 3200, Groups: []Group{}},
+		config: Config{Port: 7544, Groups: []Group{}},
 	}
 }
 
@@ -107,7 +107,7 @@ func (s *server) loadConfig() error {
 		return fmt.Errorf("invalid config JSON: %w", err)
 	}
 	if s.config.Port == 0 {
-		s.config.Port = 3200
+		s.config.Port = 7544
 	}
 	// A config without a "groups" key unmarshals to a nil slice, which encodes
 	// as JSON null and breaks the frontend's group list. Keep it an empty slice

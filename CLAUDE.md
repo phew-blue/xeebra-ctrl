@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-xeebra-ctrl is a monitoring and control panel for EVS Xeebra video-referee servers. It ships as a single Windows `.exe` with a system tray icon: a Go HTTP server (default port `3200`) serves an embedded React SPA and proxies requests to Xeebra devices — the cluster REST API (haproxy on `:80`) and the platform-console (`:9081`) — plus SSH-driven shutdown/restart of the servers themselves.
+xeebra-ctrl is a monitoring and control panel for EVS Xeebra video-referee servers. It ships as a single Windows `.exe` with a system tray icon: a Go HTTP server (default port `7544`) serves an embedded React SPA and proxies requests to Xeebra devices — the cluster REST API (haproxy on `:80`) and the platform-console (`:9081`) — plus SSH-driven shutdown/restart of the servers themselves.
 
 ## Stack
 
@@ -34,7 +34,7 @@ make clean
 
 ## Config & Behaviour Notes
 
-- Config: `port` (default 3200) and `groups[]` of `{name, apiServerIp, sshUser, sshPassword}`; SSH credentials default to `evs` / `evs123` when omitted.
+- Config: `port` (default 7544) and `groups[]` of `{name, apiServerIp, sshUser, sshPassword}`; SSH credentials default to `evs` / `evs123` when omitted.
 - `/api/proxy` hits the Xeebra haproxy frontend on `:80`; `/api/platform` hits the platform-console on `:9081`. Keep them separate — the platform-console stays up when haproxy/docker is broken (a real observed failure mode).
 - Shutdown/restart flow: read server configuration status → `_stop` if `RUNNING` → wait 10 s → SSH `sudo shutdown now` / `sudo reboot`.
 - The frontend treats `apiServerIp: "0.0.0.0"` as preview mode and shows demo servers.

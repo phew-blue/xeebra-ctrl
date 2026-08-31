@@ -1,5 +1,5 @@
 {
-  "port": 3200,
+  "port": 7544,
   "groups": [
     {
       "name": "Studio A",
