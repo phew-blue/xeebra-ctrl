@@ -9,7 +9,7 @@ source, the settings you would otherwise reach device by device, and a shutdown
 that works through the room in order at the end of the day.
 
 It ships as one Windows `.exe` with a system tray icon. A Go HTTP server
-(default port `3200`) serves an embedded React SPA, so there is nothing else to
+(default port `7544`) serves an embedded React SPA, so there is nothing else to
 install and no separate web server to keep running.
 
 ![Two units side by side, each showing its grid of live SDI sources](docs/preview.webp)
@@ -33,7 +33,7 @@ earlier keep theirs beside the old exe, and that location is still read. See
 
 ```json
 {
-  "port": 3200,
+  "port": 7544,
   "groups": [
     {
       "name": "Studio A",
