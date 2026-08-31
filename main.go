@@ -14,14 +14,44 @@ import (
 	"github.com/getlantern/systray"
 )
 
+// Two sets, because the tray takes one icon and cannot follow the Windows theme
+// by itself. The white glyph disappears on a light taskbar and the blue one is
+// lost on a dark taskbar, so the set is chosen once at startup from
+// SystemUsesLightTheme. The mark stays brand blue either way.
+
 //go:embed assets/icon-green.ico
-var iconGreen []byte
+var iconGreenDark []byte
 
 //go:embed assets/icon-amber.ico
-var iconAmber []byte
+var iconAmberDark []byte
 
 //go:embed assets/icon-red.ico
-var iconRed []byte
+var iconRedDark []byte
+
+//go:embed assets/icon-green-light.ico
+var iconGreenLight []byte
+
+//go:embed assets/icon-amber-light.ico
+var iconAmberLight []byte
+
+//go:embed assets/icon-red-light.ico
+var iconRedLight []byte
+
+// Resolved by initIcons before the tray draws anything.
+var iconGreen, iconAmber, iconRed []byte
+
+// initIcons picks the set that will read against the current taskbar. A theme
+// changed after startup is not followed: Windows sends no usable notification to
+// a systray-only process, and re-reading the registry on the health poll would
+// mean a registry hit every five seconds for something that changes once in a
+// blue moon. Restarting the tray picks up the new theme.
+func initIcons() {
+	if systemUsesLightTheme() {
+		iconGreen, iconAmber, iconRed = iconGreenLight, iconAmberLight, iconRedLight
+		return
+	}
+	iconGreen, iconAmber, iconRed = iconGreenDark, iconAmberDark, iconRedDark
+}
 
 const pollInterval = 5 * time.Second
 
@@ -71,6 +101,8 @@ func main() {
 }
 
 func onReady() {
+	initIcons()
+
 	srv := newServer()
 	if err := srv.loadConfig(); err != nil {
 		systray.SetIcon(iconRed)

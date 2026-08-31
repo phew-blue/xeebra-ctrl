@@ -17,7 +17,8 @@ xeebra-ctrl is a monitoring and control panel for EVS Xeebra video-referee serve
 - `main.go` — entrypoint + system tray; `HEADLESS=1` skips the tray (server only, works on Linux/Mac)
 - `server.go` — config load/save, all `/api/*` handlers, HTTP proxies, SSH shutdown/restart
 - `frontend/src/` — `App.tsx`, `components/` (Sidebar, ServerView, Monitoring/Metrics/Config/Settings tabs, Shutdown/Restart modals, VideoCell), `hooks/useHealthAlerts.ts`
-- `installer/windows/` — Inno Setup script (`xeebra-ctrl.iss`) + startup PowerShell
+- `installer/windows/` — Inno Setup script (`xeebra-ctrl.iss`)
+- `assets/generate.py` — regenerates every tray icon from the two vendored SVGs. The mark plus the Material Symbols whistle, in two sets: white glyph for a dark taskbar, brand blue for a light one, chosen at startup from `SystemUsesLightTheme`. Artwork is rendered at 16/24/32/48/256 rather than one 256px image, which is why the old icon was invisible in the tray
 - `Dockerfile` + `nginx.conf` — frontend-only **preview mode** image: nginx serves the SPA, mocks `/api/config`, and returns 502 for all other `/api/*`
 - `xeebra-ctrl.config.example.json` — config shape; the real `xeebra-ctrl.config.json` lives in `%ProgramData%\Phew Blue\Xeebra CTRL\` (installs upgraded from <= v0.2.1 keep theirs next to the exe, which is still read as a fallback)
 
