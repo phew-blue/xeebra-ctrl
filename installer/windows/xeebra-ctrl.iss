@@ -8,7 +8,7 @@
 
 #define MyAppName      "Xeebra CTRL"
 #ifndef MyAppVersion
-  #define MyAppVersion "0.3.2"
+  #define MyAppVersion "0.3.3"
 #endif
 #define MyAppPublisher "Phew Blue"
 #define MyAppExeName   "xeebra-ctrl.exe"
