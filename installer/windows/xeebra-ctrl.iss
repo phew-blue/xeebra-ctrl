@@ -133,9 +133,11 @@ begin
   if not RegQueryStringValue(RootKey, UninstallKey, 'UninstallString', UninstallString) then
     Exit;
 
-  { Rescue the config before the old uninstaller deletes it — its
-    [UninstallDelete] removes xeebra-ctrl.config.json, and the new install lives
-    somewhere else entirely, so nothing else would carry the groups across. }
+  { Rescue the config before the old uninstaller deletes it: its UninstallDelete
+    entry removes xeebra-ctrl.config.json, and the new install lives somewhere
+    else entirely, so nothing else would carry the groups across.
+    NB: never start a line here with a bracketed word — Inno reads any line whose
+    first non-space character is "[" as a section tag, even inside a comment. }
   if RegQueryStringValue(RootKey, UninstallKey, 'InstallLocation', InstallLocation) then
   begin
     InstallLocation := RemoveQuotes(InstallLocation);
