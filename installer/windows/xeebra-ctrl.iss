@@ -87,8 +87,15 @@ Type: files;      Name: "{app}\xeebra-ctrl.config.json"
 Type: dirifempty; Name: "{localappdata}\Phew Blue"
 
 [Code]
+const
+  UninstallKey = 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\xeebra-ctrl_is1';
+
 var
   PortPage: TInputQueryWizardPage;
+  { Config rescued from a machine-wide install before it is uninstalled, so the
+    configured groups survive the move to a per-user location. AnsiString because
+    LoadStringFromFile takes it as a var parameter, which cannot convert. }
+  MigratedConfig: AnsiString;
 
 { A resident tray process holds our own .exe open. Restart Manager cannot reliably
   close a tray app with no main window, and a silent install must never stop to
@@ -109,21 +116,56 @@ end;
   that one and would leave it stranded with its task still running. Uninstall it
   first. Best-effort: if the user declines the elevation prompt we carry on rather
   than blocking a fresh install. }
+{ Removes a machine-wide install left by <= v0.2.1, first rescuing its config.
+
+  Deliberately only HKLM, and both registry views. v0.2.1 installed in 32-bit
+  mode, so its key is under WOW6432Node; this installer runs 64-bit and sees a
+  different view, which is why the first attempt at this silently found nothing
+  and stranded the old copy. HKCU is never checked: that is where the current
+  per-user install registers, and uninstalling it here would delete the very
+  config we are about to migrate. Inno handles same-AppId upgrades itself. }
+function RemoveMachineWideInstall(RootKey: Integer): Boolean;
+var
+  UninstallString, InstallLocation, OldConfig: String;
+  ResultCode: Integer;
+begin
+  Result := False;
+  if not RegQueryStringValue(RootKey, UninstallKey, 'UninstallString', UninstallString) then
+    Exit;
+
+  { Rescue the config before the old uninstaller deletes it — its
+    [UninstallDelete] removes xeebra-ctrl.config.json, and the new install lives
+    somewhere else entirely, so nothing else would carry the groups across. }
+  if RegQueryStringValue(RootKey, UninstallKey, 'InstallLocation', InstallLocation) then
+  begin
+    InstallLocation := RemoveQuotes(InstallLocation);
+    if InstallLocation <> '' then
+    begin
+      OldConfig := AddBackslash(InstallLocation) + 'xeebra-ctrl.config.json';
+      if FileExists(OldConfig) then
+        LoadStringFromFile(OldConfig, MigratedConfig);
+    end;
+  end;
+
+  UninstallString := RemoveQuotes(UninstallString);
+  if FileExists(UninstallString) then
+  begin
+    Exec(UninstallString, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '',
+         SW_HIDE, ewWaitUntilTerminated, ResultCode);
+    Result := True;
+  end;
+end;
+
 function InitializeSetup(): Boolean;
 var
-  OldUninstaller: String;
   ResultCode: Integer;
 begin
   Result := True;
+  MigratedConfig := '';
 
-  if RegQueryStringValue(HKLM, 'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\xeebra-ctrl_is1',
-                         'UninstallString', OldUninstaller) then
-  begin
-    OldUninstaller := RemoveQuotes(OldUninstaller);
-    if FileExists(OldUninstaller) then
-      Exec(OldUninstaller, '/VERYSILENT /SUPPRESSMSGBOXES /NORESTART', '',
-           SW_HIDE, ewWaitUntilTerminated, ResultCode);
-  end;
+  { 64-bit view first, then the 32-bit one v0.2.1 actually used. }
+  if not RemoveMachineWideInstall(HKLM64) then
+    RemoveMachineWideInstall(HKLM32);
 
   { The old install also registered a scheduled task. Its uninstaller removes it,
     but drop it explicitly in case that install was already gone. }
@@ -164,6 +206,14 @@ begin
     wizard page only applies to a fresh install. }
   if FileExists(Path) then
     Exit;
+
+  { Carried over from a machine-wide install we just removed: keep the groups
+    rather than seeding an empty config the operator would have to rebuild. }
+  if MigratedConfig <> '' then
+  begin
+    SaveStringToFile(Path, MigratedConfig, False);
+    Exit;
+  end;
 
   Port := Trim(PortPage.Values[0]);
   if Port = '' then Port := '3200';
